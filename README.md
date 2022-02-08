@@ -1,4 +1,6 @@
 # SmartSunVisor
-Repository for senior project 21-22
+Repository for our senior project 21-22
 
-This project is for the Smart Sun Visor, a vehicle sun visor that automatically shades the driver, hands-free.
+Click on "Main_Program" for the main code to go on the ESP32-WROOM-32E.
+
+Click on "Smartphone_App" for the code to create the Android application.
