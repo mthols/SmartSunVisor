@@ -1,0 +1,30 @@
+// Here is the code to read the analog voltage values from the photovoltaic cells.
+// For reference: https://microcontrollerslab.com/adc-esp32-measuring-voltage-example/
+//                https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/adc.html
+// ADC channels and pins used:
+// IO34 -> ADC1_CH6
+// IO35 -> ADC1_CH7
+// IO32 -> ADC1_CH4
+// IO33 -> ADC1_CH5
+// IO25 -> ADC2_CH8
+// IO26 -> ADC2_CH9
+// IO27 -> ADC2_CH7
+// IO14 -> ADC2_CH6
+
+#define CELL1PIN 34
+#define CELL2PIN 35
+#define CELL3PIN 32
+#define CELL4PIN 33
+#define CELL5PIN 25
+#define CELL6PIN 26
+#define CELL7PIN 27
+#define CELL8PIN 14
+
+
+void setup() {
+    
+}
+
+void loop() {
+    
+}
