@@ -1,30 +1,36 @@
-// Here is the code to read the analog voltage values from the photovoltaic cells.
+// Here is the code to read the analog voltage values from the photovoltaic cells on the ESP32-WROOM-32E.
 // For reference: https://microcontrollerslab.com/adc-esp32-measuring-voltage-example/
 //                https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/adc.html
 // ADC channels and pins used:
-// IO34 -> ADC1_CH6
-// IO35 -> ADC1_CH7
-// IO32 -> ADC1_CH4
-// IO33 -> ADC1_CH5
-// IO25 -> ADC2_CH8
-// IO26 -> ADC2_CH9
-// IO27 -> ADC2_CH7
-// IO14 -> ADC2_CH6
+// IO34 -> ADC1_CH6 -> Cell 1
+// IO35 -> ADC1_CH7 -> Cell 2
+// IO32 -> ADC1_CH4 -> Cell 3
+// IO33 -> ADC1_CH5 -> Cell 4
+// IO25 -> ADC2_CH8 -> Cell 5
+// IO26 -> ADC2_CH9 -> Cell 6
+// IO27 -> ADC2_CH7 -> Cell 7
+// IO14 -> ADC2_CH6 -> Cell 8
 
-#define CELL1PIN 34
-#define CELL2PIN 35
-#define CELL3PIN 32
-#define CELL4PIN 33
-#define CELL5PIN 25
-#define CELL6PIN 26
-#define CELL7PIN 27
-#define CELL8PIN 14
-
+int cellPin[8] = { 34, 35, 32, 33, 25, 26, 27, 14 };    //array for pins that the photovoltaic cells are connected to.
+int cellRawData[8] = { 0 };                             //array for raw ADC photovoltaic cell readings.
+int cellVoltage[8] = { 0 };                             //array for calculated photovoltaic cell voltage.
 
 void setup() {
-    
+    Serial.begin(115200);       //begin serial communication.
 }
 
 void loop() {
-    
+    for (int i = 0; i <= 7; i++) {
+    cellRawData[i] = analogRead(cellPin[i]);
+    Serial.print("Cell ");
+    Serial.print(i+1);
+    Serial.print(" Raw Data = ");
+    Serial.println(cellReading[i]);
+    delay(1000);
+    cellVoltage[i] = (cellRawData[i] * 3.3) / 4095;
+    Serial.print("And Voltage = ");
+    Serial.print(cellVoltage[i]);
+    Serial.println("V");
+    delay(1000);
+    }
 }
