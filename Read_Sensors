@@ -1,6 +1,8 @@
 // Here is the code to read the analog voltage values from the photovoltaic cells on the ESP32-WROOM-32E.
 // For reference: https://microcontrollerslab.com/adc-esp32-measuring-voltage-example/
 //                https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/adc.html
+//                https://deepbluembedded.com/esp32-adc-tutorial-read-analog-voltage-arduino/
+//
 // ADC channels and pins used:
 // IO34 -> ADC1_CH6 -> Cell 1
 // IO35 -> ADC1_CH7 -> Cell 2
@@ -11,27 +13,96 @@
 // IO27 -> ADC2_CH7 -> Cell 7
 // IO14 -> ADC2_CH6 -> Cell 8
 
-int cellPin[8] = { 34, 35, 32, 33, 25, 26, 27, 14 };    //array for pins that the photovoltaic cells are connected to.
-int cellRawData[8] = { 0 };                             //array for raw ADC photovoltaic cell readings.
-int cellVoltage[8] = { 0 };                             //array for calculated photovoltaic cell voltage.
+// Attenuation on the ADC channels to use:
+// #define ADC_ATN 6
+
+//globals
+float azimuthDegrees = 0;
+float north = 0;
+float east = 0;
+float south = 0;
+float west = 0;
 
 void setup() {
     Serial.begin(115200);                               //begin serial communication.
+//    analogSetAttenuation(ADC_ATN);                      //set the attenuation of all ADC channels.
 }
 
 void loop() {
-                                                        //in the future, this for loop will -most likely- need to be in its own function.
-    for (int i = 0; i <= 7; i++) {                      //for each cell,
-    cellRawData[i] = analogRead(cellPin[i]);            //read the analog (raw) value and store in array,
-    Serial.print("Cell ");                              //print "Cell [i+1] Raw Data = #" to 
-    Serial.print(i+1);
-    Serial.print(" Raw Data = ");
-    Serial.println(cellRawData[i]);
-    delay(1000);
-    cellVoltage[i] = (cellRawData[i] * 3.3) / 4095;     //calculate the voltage level from the raw value,
-    Serial.print("And Voltage = ");                     //print "And Voltage = # V"
-    Serial.print(cellVoltage[i]);
-    Serial.println(" V");
-    delay(1000);
+
+//    //cellRawData[i] = analogRead(cellPin[i]);            //read the analog (raw) value and store in array,
+//    //cellVoltage[i] = (cellRawData[i] * 3.3) / 4095;     //calculate the voltage level from the raw value,
+//    //Serial.print("Cell ");                              //print "Cell [i+1] Raw Data = #"
+//    //Serial.print(i+1);
+//    //Serial.print(" Raw Data = ");
+//    //Serial.print(cellRawData[i]);
+//    //Serial.print(" And Voltage = ");                     //print "And Voltage = # V"
+//    //Serial.print(cellVoltage[i]);
+//    //Serial.println(" V");
+
+   getAzimuth();
+   delay(1000);
+}
+
+void debugger(float var) {
+  Serial.print(var);
+  Serial.println();
+}
+
+void getAzimuth () {
+    //read sensors
+    int one = analogRead(34);
+    int two = analogRead(35);
+    int three = analogRead(32);
+    int four = analogRead(33);
+    int five = analogRead(25);
+    int six = analogRead(26);
+    int seven = analogRead(27);
+    int eight = analogRead(14);
+
+    //add up the readings from the cells facing the same directions.
+    north = three + five; //0 degrees
+    east = one + seven;   //90 degrees
+    south = four + six;   //180 degrees
+    west = two + eight;   //270 degrees
+
+    if (north > south){                               // if the north value is greater than the south value,
+      if (east > west){                               // AND if the east value is greater than the west value,
+        if (north > east){                             // AND if the north value is greater than the east value,
+          azimuthDegrees = (east/north) * 90;           // the azimuth must be 0 degrees north plus the smaller pull to the east.
+        }
+        else {                                         // else, the east value is greater than the north value,
+          azimuthDegrees = 90 - ((north/east) * 90);    // so the azimuth must be 90 degrees east, minus the smaller pull to the north.
+        }
+      }
+      else {                                          // else, the west value is greater than the east value (but north > south still),
+        if (north > west){                            // AND the north value is greater than the west value,
+          azimuthDegrees = 360 - ((west/north) * 90); // the azimuth must be 360 (or 0) degrees north minus the smaller pull to the west.
+        }
+        else {                                        // else, the west value is greater than the north value,
+          azimuthDegrees = 270 + ((north/west) * 90); // the azimuth must be 270 degrees west plus the smaller pull to the north.
+        }
+      }
     }
+    else {                                            // else, the south value is greater than the north value,
+      if (east > west){                               // AND the east value is greater than the west value,
+        if (south > east){                            // AND the south value is greater than the east value,
+          azimuthDegrees = 180 - ((east/south) * 90); // the azimuth must be 180 degrees south minus the smaller pull to the east.
+        }
+        else {                                        // else, the east value is greater than the south value,
+          azimuthDegrees = 90 + ((south/east) * 90);  // the azimuth must be 90 degrees east plus the smaller pull to the south.
+        }
+      }
+      else {                                          // else the west value is greater than the east value,
+        if (south > west) {                           // AND the south value is greater than the west value,
+          azimuthDegrees = 180 + ((west/south) * 90); // the azimuth must be 180 degrees south plus the smaller pull to the west.
+        }
+        else {                                        // else the west value is greater than the south value,
+          azimuthDegrees = 270 - ((south/west) * 90); // the azimuth must be 270 degrees west minus the smaller pull to the south.
+        }
+      }
+    }
+    
+    Serial.print(azimuthDegrees);
+    Serial.println();
 }
