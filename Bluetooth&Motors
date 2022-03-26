@@ -1,0 +1,60 @@
+#include <Arduino.h>
+#include "DRV8825.h"    //https://github.com/laurb9/StepperDriver
+                        //https://microcontrollerslab.com/drv8825-stepper-motor-driver-esp32-tutorial/
+#include "SyncDriver.h"
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+// using a 200-step motor
+#define MOTOR_STEPS 200
+
+// set RPM
+#define RPM 120
+
+// configure the pins connected
+#define DIR_1 16
+#define STEP_1 17
+#define DIR_2 5
+#define STEP_2 18
+
+// set microsteps to 1:full step, 2:half step...must match configuration set on physical pins M0, M1, and M2
+#define MICROSTEPS 1
+
+// make stepper motor object(?)
+DRV8825 Track_Stepper_Right(MOTOR_STEPS, DIR_1, STEP_1);
+DRV8825 Track_Stepper_Left(MOTOR_STEPS, DIR_2, STEP_2);
+
+SyncDriver controller(Track_Stepper_Left, Track_Stepper_Right);
+
+// LED on GPIO2
+// int ledPin = 23;
+
+//int Dir, newDir = 0;
+
+void setup() {
+    Serial.begin(115200);
+    SerialBT.begin("ESP32test"); //Bluetooth device name
+    Serial.println("The device started, now you can pair it with bluetooth!");
+    // Set target motor RPM and microstepping
+    Track_Stepper_Right.begin(RPM, MICROSTEPS);
+    Track_Stepper_Left.begin(RPM, MICROSTEPS);
+}
+
+void loop() {
+
+    if (Serial.available()) {
+      SerialBT.write(Serial.read());
+    }
+    if (SerialBT.available()) {
+      Serial.write(SerialBT.read());
+    }
+    //controller.rotate(-360, -360);
+    //Track_Stepper_Right.move(-360);
+    //Track_Stepper_Left.move(-360);
+    delay(500);
+}
