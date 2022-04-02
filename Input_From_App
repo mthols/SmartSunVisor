@@ -1,0 +1,122 @@
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+int autoMode = 1;
+int manualMode = 0;
+int manualHeight = 0;
+int horizontalRange = 100;
+
+const byte numChars = 32;
+char receivedChars[numChars]; // an array to store the received data
+boolean newData = false;
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("SSVCompanion"); //Bluetooth device name
+  Serial.println("The device started, now you can pair it with bluetooth!");
+  //print settings
+  Serial.println("Starting in Auto Mode...");
+  Serial.print("Horizontal Range = ");
+  Serial.println(horizontalRange);
+}
+
+void loop() {
+  recvWithEndMarker();
+  if (newData == true) {
+     if (receivedChars[0] == '0' && manualMode == 1) {
+        manualHeight = 0;
+     }
+     else if (receivedChars[0] == '1') {
+        if (receivedChars[1] == '0') {
+          horizontalRange = 100;
+        }
+        else if (manualMode == 1) {
+          manualHeight = 1;
+        }
+     }
+     else if (receivedChars[0] == '2' && manualMode == 1) {
+        manualHeight = 2;
+     }
+     else if (receivedChars[0] == '3' && manualMode == 1) {
+        manualHeight = 3;
+     }
+     else if (receivedChars[0] == '4' && manualMode == 1) {
+        manualHeight = 4;
+     }
+     else if (receivedChars[0] == '5') {
+        if (receivedChars[1] == '0') {
+          horizontalRange = 50;
+        }
+        else if (manualMode == 1) {
+          manualHeight = 5;
+        }
+      }
+      else if (receivedChars[0] == '6') {
+        if (receivedChars[1] == '0') {
+          horizontalRange = 60;
+        }
+        else if (manualMode == 1) {
+          manualHeight = 6;
+        }
+      }
+      else if (receivedChars[0] == '7') {
+        if (receivedChars[1] == '0') {
+          horizontalRange = 70;
+        }
+        else {
+          autoMode = 1;
+          manualMode = 0;
+          Serial.println("Auto Height Mode Activated");
+        }
+      }
+      else if (receivedChars[0] == '8') {
+        if (receivedChars[1] == '0') {
+          horizontalRange = 80;
+        }
+        else {
+          autoMode = 0;
+          manualMode = 1;
+          Serial.println("Manual Height Mode Activated");
+        }
+      }
+      else if (receivedChars[0] == '9') {
+        horizontalRange = 90;
+      }
+
+      if (manualMode == 1) {
+        Serial.print("Manual Height = ");
+        Serial.println(manualHeight);
+      }
+      Serial.print("Horizontal Range = ");
+      Serial.println(horizontalRange);
+      newData = false;
+   }
+}
+
+void recvWithEndMarker() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+ 
+  if (SerialBT.available() > 0) {
+    rc = SerialBT.read();
+
+    if (rc != endMarker) {
+      receivedChars[ndx] = rc;
+      ndx++;
+      if (ndx >= numChars) {
+          ndx = numChars - 1;
+      }
+    }
+    else {
+      receivedChars[ndx] = '\0'; // terminate the string
+      ndx = 0;
+      newData = true;
+    }
+  }
+}
