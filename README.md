@@ -25,20 +25,26 @@ ADC2_CH7 -> IO27 -> Cell 7
 
 ADC2_CH6 -> IO14 -> Cell 8
 
-#### Track Motor
+#### Track Motor 1 (DRV8825) (Right)
 
 IO16 -> Direction
 
 IO17 -> Step
 
-#### Visor Motor
+#### Track Motor 2 (DRV8825) (Left)
 
 IO5 -> Direction
 
 IO18 -> Step
 
+#### Visor Motor (DRV8825) (Right)
+
+IO22 -> Direction
+
+IO23 -> Step
+
 #### Limit Switches
 
-IO12 -> Door window
+IO13 -> Door window
 
-IO13 -> Windshield
+IO19 -> Windshield
