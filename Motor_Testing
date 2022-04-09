@@ -1,0 +1,182 @@
+#include <Arduino.h>
+#include "SyncDriver.h"
+#include "DRV8825.h"    //https://github.com/laurb9/StepperDriver, https://microcontrollerslab.com/drv8825-stepper-motor-driver-esp32-tutorial/
+
+// using a 200-step motor
+#define MOTOR_STEPS 200
+// set RPM
+#define RPM 120
+// stepper pins
+#define DIR_1 16
+#define STEP_1 17
+#define DIR_2 5
+#define STEP_2 18
+#define DIR_3 22
+#define STEP_3 23
+// set microsteps to 1:full step, 2:half step...must match configuration set on physical pins M0, M1, and M2
+#define MICROSTEPS 1
+// this is the avg. # of steps it takes for the carriage assembly to get from end to end
+#define MAX_STEPS 2417
+// this is the number of steps it takes for the the carriage assembly to get from the left
+// end to the curve
+#define LEFT_STEPS 600
+// limit switch pins
+#define LS1 13    // left
+#define LS2 19    // right
+
+// make stepper motor objects
+DRV8825 Track_Stepper_Right(MOTOR_STEPS, DIR_1, STEP_1);
+DRV8825 Track_Stepper_Left(MOTOR_STEPS, DIR_2, STEP_2);
+DRV8825 Visor_Stepper(MOTOR_STEPS, DIR_3, STEP_3);
+SyncDriver Track_Steppers(Track_Stepper_Left, Track_Stepper_Right);
+
+// motor globals
+int newDirection = 0;
+int currentDirection = 1;
+int stepCounter = 0;
+int currentPosition = 0;
+int newPosition = 0;
+// limit switch state globals
+bool LS1_Value = true;
+bool LS2_Value;
+
+
+void setup() {
+  // start serial
+  Serial.begin(115200);
+  
+  // give the limit switches pullup resistors
+  pinMode(LS1, INPUT_PULLUP);
+  pinMode(LS2, INPUT_PULLUP);
+
+  // set each stepper RPM and microstepping
+  Track_Stepper_Right.begin(RPM, MICROSTEPS);
+  Track_Stepper_Left.begin(RPM, MICROSTEPS);
+  Visor_Stepper.begin(RPM, MICROSTEPS);
+
+  //initialize the carriages at home (far left)
+  homeCarriages();
+  Serial.println("Carriages homed");
+}
+
+
+void loop() {
+  // need to recount steps
+  LS2_Value = digitalRead(LS2);
+  Serial.print("LS2 = ");
+  Serial.println(LS2_Value);
+  if (LS2_Value == HIGH) {
+    countSteps();
+  }
+  else {
+    Serial.println("Done counting");
+    Serial.print("Total steps = ");
+    Serial.println(stepCounter); 
+  }
+}
+
+
+void homeCarriages() {
+  // read the value of the left limit switch, which will be HIGH unless the carriage hits it, 
+  // so go left until it does hit it so it can home in.
+  Serial.print("LS1 = ");
+  Serial.println(LS1_Value);
+  while (LS1_Value == true) {
+    Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
+    Serial.println("Homing...");
+    LS1_Value = digitalRead(LS1);
+    Serial.print("LS1 = ");
+    Serial.println(LS1_Value);
+  }
+}
+
+
+// 225-360/0-45 degrees is the approx. usable range that the track covers, meaning that
+// azimuth > 45 and azimuth < 225 degrees is a deadzone that we cannot cover, and therefore,
+// don't need to worry about.
+//void mapAzimuth() {
+//  if (Serial.available()) {
+//    int newAzimuth = Serial.parseInt();
+//    Serial.print("New azimuth = ");
+//    Serial.print(newAzimuth);
+//    Serial.println(" degrees");
+//    if (newAzimuth >= 0 && newAzimuth <= 45) {
+//      newPosition = map(newAzimuth, 0, 45, LEFT_STEPS, MAX_STEPS);
+//    }
+//    else if (newAzimuth >= 225 && newAzimuth <= 360) {
+//      newPosition = map(newAzimuth, 225, 360, 0, LEFT_STEPS);
+//    }
+//    else {
+//      Serial.println("Azimuth OOR");
+//    }
+//  }
+//}
+
+
+// this function is for moving the two track motors according to the previously calculated
+// azimuth value, mapped to the 
+//void horizontalMove() {
+//  // the next move will be the difference between the new and last positions
+//  // (units = steps)
+//  int nextMove = newPosition - currentPosition;
+//  Serial.print("Next move = ");
+//  Serial.print(nextMove);
+//  Serial.println(" steps");
+//  
+//  // move the track steppers the appropriate amount of steps from the last position,
+//  // stop moving if a limit switch is tripped
+//  for (int i = 0; (i <= (abs(nextMove))) && (trippedSwitch == false); i++) {
+//    // move left if nextMove is negative and subtract from the current position
+//    if (nextMove < 0) {
+//      Track_Steppers.move(-1.8, -1.8);
+//      currentPosition -= 1;
+//    }
+//    // or move right if nextMove is positive and add to the current position
+//    else if (nextMove > 0) {
+//      Track_Steppers.move(1.8, 1.8);
+//      currentPosition += 1;
+//    }
+//  }
+//  Serial.print("Current position now = ");
+//  Serial.print(currentPosition);
+//  Serial.println(" steps from left");
+//}
+
+
+void countSteps() {
+  // this function allows the user to change the direction of the track motors or stop them
+  // entirely, it has only been tested by itself, and was used to count how many whole steps
+  // there are from one end of the track to the other for the carriage assembly to move.
+  if (Serial.available()) {
+    newDirection = Serial.parseInt();
+    // if a one is sent or the carriages hit the left
+    if ((newDirection == 1) || (LS1_Value == LOW)) {
+      currentDirection = 1;
+    }
+    // if a two is sent or the carriages hit the right
+    else if ((newDirection == 2) || (LS2_Value == LOW)) {
+      currentDirection = 2;
+    }
+    else if (newDirection == 3) {
+      currentDirection = 3;
+    }
+  }
+  
+  if (currentDirection == 1) {
+    Track_Steppers.move(MICROSTEPS, MICROSTEPS);
+    stepCounter += MICROSTEPS;
+  }
+  else if (currentDirection == 2) {
+    Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
+    stepCounter += MICROSTEPS;
+  }
+  else if (currentDirection == 3) {
+    Track_Steppers.move(0, 0);
+  }
+  else {
+    Track_Steppers.move(0, 0);
+  }
+  Serial.print("Steps = ");
+  Serial.println(stepCounter);
+  currentPosition = stepCounter;
+}
