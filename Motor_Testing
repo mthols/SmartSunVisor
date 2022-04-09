@@ -1,11 +1,14 @@
+// NOT TESTED
+
 #include <Arduino.h>
 #include "SyncDriver.h"
 #include "DRV8825.h"    //https://github.com/laurb9/StepperDriver, https://microcontrollerslab.com/drv8825-stepper-motor-driver-esp32-tutorial/
 
 // using a 200-step motor
 #define MOTOR_STEPS 200
-// set RPM
-#define RPM 120
+// different RPM speeds
+#define NORMAL_RPM 120
+#define FAST_RPM 180
 // stepper pins
 #define DIR_1 16
 #define STEP_1 17
@@ -50,9 +53,9 @@ void setup() {
   pinMode(LS2, INPUT_PULLUP);
 
   // set each stepper RPM and microstepping
-  Track_Stepper_Right.begin(RPM, MICROSTEPS);
-  Track_Stepper_Left.begin(RPM, MICROSTEPS);
-  Visor_Stepper.begin(RPM, MICROSTEPS);
+  Track_Stepper_Right.begin(NORMAL_RPM, MICROSTEPS);
+  Track_Stepper_Left.begin(NORMAL_RPM, MICROSTEPS);
+  Visor_Stepper.begin(NORMAL_RPM, MICROSTEPS);
 
   //initialize the carriages at home (far left)
   homeCarriages();
@@ -61,18 +64,15 @@ void setup() {
 
 
 void loop() {
-  // need to recount steps
-  LS2_Value = digitalRead(LS2);
-  Serial.print("LS2 = ");
-  Serial.println(LS2_Value);
-  if (LS2_Value == HIGH) {
-    countSteps();
-  }
-  else {
-    Serial.println("Done counting");
-    Serial.print("Total steps = ");
-    Serial.println(stepCounter); 
-  }
+  // need to slow following carriage when between 
+  if (Serial.available()) {
+    pendingPosition = Serial.parseInt();
+    if (pendingPosition > 0 && pendingPosition <= MAX_STEPS) {
+      newPosition = pendingPosition;
+      Serial.print("New position = ");
+      Serial.println(newPosition);
+    }
+    horizontalMove();
 }
 
 
@@ -88,6 +88,55 @@ void homeCarriages() {
     Serial.print("LS1 = ");
     Serial.println(LS1_Value);
   }
+}
+
+
+// this function is for moving the two track motors according to the previously calculated
+// azimuth value, mapped to the...
+void horizontalMove() {
+  // the next move will be the difference between the new and last positions
+  // (units = steps)
+  int nextMove = newPosition - currentPosition;
+  Serial.print("Next move = ");
+  Serial.print(nextMove);
+  Serial.println(" steps");
+  
+  // move the track steppers the appropriate amount of steps from the last position,
+  // stop moving if a limit switch is tripped
+  for (int i = 0; (i <= (abs(nextMove) && LS1_Value == true && LS2_Value == true); i++) {
+    // set stepper speeds
+    if (currentPosition > 2100) {
+      Track_Stepper_Left.setSpeed(FAST_RPM);
+      Track_Stepper_Right.setSpeed(NORMAL_RPM);
+    }
+    else if (currentPosition > 400 && currentPosition < 1500) {
+      Track_Stepper_Left.setSpeed(NORMAL_RPM);
+      Track_Stepper_Right.setSpeed(FAST_RPM);
+    }
+    else {
+      Track_Stepper_Left.setSpeed(NORMAL_RPM);
+      Track_Stepper_Right.setSpeed(NORMAL_RPM);
+    }
+
+    // move left if nextMove is negative and subtract from the current position
+    if (nextMove < 0) {
+      Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
+      currentPosition -= 1;
+    }
+    // or move right if nextMove is positive and add to the current position
+    else if (nextMove > 0) {
+      Track_Steppers.move(MICROSTEPS, MICROSTEPS);
+      currentPosition += 1;
+    }
+    // check the limit switches
+    LS1_Value = digitalRead(LS1);
+    LS2_Value = digitalRead(LS2);
+    Serial.print("Current position now = ");
+    Serial.print(currentPosition);
+  }
+  Serial.print("Current position now = ");
+  Serial.print(currentPosition);
+  Serial.println(" steps from left");
 }
 
 
@@ -113,70 +162,40 @@ void homeCarriages() {
 //}
 
 
-// this function is for moving the two track motors according to the previously calculated
-// azimuth value, mapped to the 
-//void horizontalMove() {
-//  // the next move will be the difference between the new and last positions
-//  // (units = steps)
-//  int nextMove = newPosition - currentPosition;
-//  Serial.print("Next move = ");
-//  Serial.print(nextMove);
-//  Serial.println(" steps");
-//  
-//  // move the track steppers the appropriate amount of steps from the last position,
-//  // stop moving if a limit switch is tripped
-//  for (int i = 0; (i <= (abs(nextMove))) && (trippedSwitch == false); i++) {
-//    // move left if nextMove is negative and subtract from the current position
-//    if (nextMove < 0) {
-//      Track_Steppers.move(-1.8, -1.8);
-//      currentPosition -= 1;
+//void countSteps() {
+//  // this function allows the user to change the direction of the track motors or stop them
+//  // entirely, it has only been tested by itself, and was used to count how many whole steps
+//  // there are from one end of the track to the other for the carriage assembly to move.
+//  if (Serial.available()) {
+//    newDirection = Serial.parseInt();
+//    // if a one is sent or the carriages hit the left
+//    if ((newDirection == 1) || (LS1_Value == LOW)) {
+//      currentDirection = 1;
 //    }
-//    // or move right if nextMove is positive and add to the current position
-//    else if (nextMove > 0) {
-//      Track_Steppers.move(1.8, 1.8);
-//      currentPosition += 1;
+//    // if a two is sent or the carriages hit the right
+//    else if ((newDirection == 2) || (LS2_Value == LOW)) {
+//      currentDirection = 2;
+//    }
+//    else if (newDirection == 3) {
+//      currentDirection = 3;
 //    }
 //  }
-//  Serial.print("Current position now = ");
-//  Serial.print(currentPosition);
-//  Serial.println(" steps from left");
+//  
+//  if (currentDirection == 1) {
+//    Track_Steppers.move(MICROSTEPS, MICROSTEPS);
+//    stepCounter += MICROSTEPS;
+//  }
+//  else if (currentDirection == 2) {
+//    Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
+//    stepCounter += MICROSTEPS;
+//  }
+//  else if (currentDirection == 3) {
+//    Track_Steppers.move(0, 0);
+//  }
+//  else {
+//    Track_Steppers.move(0, 0);
+//  }
+//  Serial.print("Steps = ");
+//  Serial.println(stepCounter);
+//  currentPosition = stepCounter;
 //}
-
-
-void countSteps() {
-  // this function allows the user to change the direction of the track motors or stop them
-  // entirely, it has only been tested by itself, and was used to count how many whole steps
-  // there are from one end of the track to the other for the carriage assembly to move.
-  if (Serial.available()) {
-    newDirection = Serial.parseInt();
-    // if a one is sent or the carriages hit the left
-    if ((newDirection == 1) || (LS1_Value == LOW)) {
-      currentDirection = 1;
-    }
-    // if a two is sent or the carriages hit the right
-    else if ((newDirection == 2) || (LS2_Value == LOW)) {
-      currentDirection = 2;
-    }
-    else if (newDirection == 3) {
-      currentDirection = 3;
-    }
-  }
-  
-  if (currentDirection == 1) {
-    Track_Steppers.move(MICROSTEPS, MICROSTEPS);
-    stepCounter += MICROSTEPS;
-  }
-  else if (currentDirection == 2) {
-    Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
-    stepCounter += MICROSTEPS;
-  }
-  else if (currentDirection == 3) {
-    Track_Steppers.move(0, 0);
-  }
-  else {
-    Track_Steppers.move(0, 0);
-  }
-  Serial.print("Steps = ");
-  Serial.println(stepCounter);
-  currentPosition = stepCounter;
-}
