@@ -1,4 +1,4 @@
-// NOT TESTED
+// NOT COMPLETE
 
 #include <Arduino.h>
 #include "SyncDriver.h"
@@ -8,7 +8,7 @@
 #define MOTOR_STEPS 200
 // different RPM speeds
 #define NORMAL_RPM 120
-#define FAST_RPM 180
+#define FAST_RPM 240
 // stepper pins
 #define DIR_1 16
 #define STEP_1 17
@@ -20,9 +20,12 @@
 #define MICROSTEPS 1
 // this is the avg. # of steps it takes for the carriage assembly to get from end to end
 #define MAX_STEPS 2417
-// this is the number of steps it takes for the the carriage assembly to get from the left
-// end to the curve
-#define LEFT_STEPS 600
+
+#define RIGHT_MIN 900
+#define RIGHT_MAX 925
+#define LEFT_MIN 1700
+#define LEFT_MAX 1750
+
 // limit switch pins
 #define LS1 13    // left
 #define LS2 19    // right
@@ -66,13 +69,14 @@ void setup() {
 void loop() {
   // need to slow following carriage when between 
   if (Serial.available()) {
-    pendingPosition = Serial.parseInt();
+    int pendingPosition = Serial.parseInt();
     if (pendingPosition > 0 && pendingPosition <= MAX_STEPS) {
       newPosition = pendingPosition;
       Serial.print("New position = ");
       Serial.println(newPosition);
     }
     horizontalMove();
+  }
 }
 
 
@@ -81,6 +85,8 @@ void homeCarriages() {
   // so go left until it does hit it so it can home in.
   Serial.print("LS1 = ");
   Serial.println(LS1_Value);
+  Track_Stepper_Left.setRPM(30);
+  Track_Stepper_Right.setRPM(30);
   while (LS1_Value == true) {
     Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
     Serial.println("Homing...");
@@ -88,6 +94,8 @@ void homeCarriages() {
     Serial.print("LS1 = ");
     Serial.println(LS1_Value);
   }
+  Track_Stepper_Left.setRPM(NORMAL_RPM);
+  Track_Stepper_Right.setRPM(NORMAL_RPM);
 }
 
 
@@ -103,99 +111,57 @@ void horizontalMove() {
   
   // move the track steppers the appropriate amount of steps from the last position,
   // stop moving if a limit switch is tripped
-  for (int i = 0; (i <= (abs(nextMove) && LS1_Value == true && LS2_Value == true); i++) {
-    // set stepper speeds
-    if (currentPosition > 2100) {
-      Track_Stepper_Left.setSpeed(FAST_RPM);
-      Track_Stepper_Right.setSpeed(NORMAL_RPM);
+  //if ((LS1_Value == false) && (LS2_Value == false)) {
+  for (int i = 0; (i <= (abs(nextMove))); i++) {
+    // if going left
+    if (nextMove < 0) {
+      if ((currentPosition > RIGHT_MIN) && (currentPosition <= RIGHT_MAX)) {
+        Serial.println("Right stepper is faster...");
+        Track_Steppers.move(-MICROSTEPS, -MICROSTEPS * 6);
+        currentPosition -= 1;
+      }
+      else if ((currentPosition > LEFT_MIN) && (currentPosition < LEFT_MAX)) {
+        Serial.println("Left stepper is faster...");
+        Track_Steppers.move(-MICROSTEPS * 6, -MICROSTEPS);
+        currentPosition -= 6;
+        i -= 5;
+      }
+      else {
+        Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
+        currentPosition -= 1;
+      }
     }
-    else if (currentPosition > 400 && currentPosition < 1500) {
-      Track_Stepper_Left.setSpeed(NORMAL_RPM);
-      Track_Stepper_Right.setSpeed(FAST_RPM);
+    // if going right
+    else if (nextMove > 0) {
+      if ((currentPosition > RIGHT_MIN) && (currentPosition <= RIGHT_MAX)) {
+        Serial.println("Right stepper is faster...");
+        Track_Steppers.move(MICROSTEPS, MICROSTEPS * 6);
+        currentPosition += 6;
+        i += 5;
+      }
+      else if ((currentPosition > LEFT_MIN) && (currentPosition < LEFT_MAX)) {
+        Serial.println("Left stepper is faster...");
+        Track_Steppers.move(MICROSTEPS * 6, MICROSTEPS);
+        currentPosition += 1;
+      }
+      else {
+        Track_Steppers.move(MICROSTEPS, MICROSTEPS);
+        currentPosition += 1;
+      }
     }
     else {
-      Track_Stepper_Left.setSpeed(NORMAL_RPM);
-      Track_Stepper_Right.setSpeed(NORMAL_RPM);
-    }
-
-    // move left if nextMove is negative and subtract from the current position
-    if (nextMove < 0) {
-      Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
-      currentPosition -= 1;
-    }
-    // or move right if nextMove is positive and add to the current position
-    else if (nextMove > 0) {
-      Track_Steppers.move(MICROSTEPS, MICROSTEPS);
-      currentPosition += 1;
+      Serial.println("No move command given.");
+      Track_Steppers.move(0, 0);
     }
     // check the limit switches
     LS1_Value = digitalRead(LS1);
     LS2_Value = digitalRead(LS2);
+    // print the new current position
     Serial.print("Current position now = ");
-    Serial.print(currentPosition);
+    Serial.println(currentPosition);
   }
-  Serial.print("Current position now = ");
+  // print the final current position when done moving
+  Serial.print("Current position final = ");
   Serial.print(currentPosition);
-  Serial.println(" steps from left");
+  Serial.println(" steps from left");  
 }
-
-
-// 225-360/0-45 degrees is the approx. usable range that the track covers, meaning that
-// azimuth > 45 and azimuth < 225 degrees is a deadzone that we cannot cover, and therefore,
-// don't need to worry about.
-//void mapAzimuth() {
-//  if (Serial.available()) {
-//    int newAzimuth = Serial.parseInt();
-//    Serial.print("New azimuth = ");
-//    Serial.print(newAzimuth);
-//    Serial.println(" degrees");
-//    if (newAzimuth >= 0 && newAzimuth <= 45) {
-//      newPosition = map(newAzimuth, 0, 45, LEFT_STEPS, MAX_STEPS);
-//    }
-//    else if (newAzimuth >= 225 && newAzimuth <= 360) {
-//      newPosition = map(newAzimuth, 225, 360, 0, LEFT_STEPS);
-//    }
-//    else {
-//      Serial.println("Azimuth OOR");
-//    }
-//  }
-//}
-
-
-//void countSteps() {
-//  // this function allows the user to change the direction of the track motors or stop them
-//  // entirely, it has only been tested by itself, and was used to count how many whole steps
-//  // there are from one end of the track to the other for the carriage assembly to move.
-//  if (Serial.available()) {
-//    newDirection = Serial.parseInt();
-//    // if a one is sent or the carriages hit the left
-//    if ((newDirection == 1) || (LS1_Value == LOW)) {
-//      currentDirection = 1;
-//    }
-//    // if a two is sent or the carriages hit the right
-//    else if ((newDirection == 2) || (LS2_Value == LOW)) {
-//      currentDirection = 2;
-//    }
-//    else if (newDirection == 3) {
-//      currentDirection = 3;
-//    }
-//  }
-//  
-//  if (currentDirection == 1) {
-//    Track_Steppers.move(MICROSTEPS, MICROSTEPS);
-//    stepCounter += MICROSTEPS;
-//  }
-//  else if (currentDirection == 2) {
-//    Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
-//    stepCounter += MICROSTEPS;
-//  }
-//  else if (currentDirection == 3) {
-//    Track_Steppers.move(0, 0);
-//  }
-//  else {
-//    Track_Steppers.move(0, 0);
-//  }
-//  Serial.print("Steps = ");
-//  Serial.println(stepCounter);
-//  currentPosition = stepCounter;
-//}
