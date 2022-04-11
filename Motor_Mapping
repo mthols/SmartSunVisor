@@ -8,7 +8,7 @@
 #define MOTOR_STEPS 200
 // different RPM speeds
 #define NORMAL_RPM 120
-#define FAST_RPM 240
+// #define FAST_RPM 240
 // stepper pins
 #define DIR_1 16
 #define STEP_1 17
@@ -23,10 +23,10 @@
 // this is the avg. # of steps it takes for the carriage assembly to get from end to end
 #define MAX_STEPS 2500
 
-#define RIGHT_MIN 950
-#define RIGHT_MAX 970
-#define LEFT_MIN 1700
-#define LEFT_MAX 1720
+// #define RIGHT_MIN 950
+// #define RIGHT_MAX 970
+// #define LEFT_MIN 1700
+// #define LEFT_MAX 1720
 
 // limit switch pins
 #define LS1 13    // left
