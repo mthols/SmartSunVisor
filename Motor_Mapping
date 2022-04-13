@@ -1,6 +1,5 @@
 // NOT COMPLETE
 
-#include <Arduino.h>
 #include "SyncDriver.h"
 #include "DRV8825.h"    //https://github.com/laurb9/StepperDriver, https://microcontrollerslab.com/drv8825-stepper-motor-driver-esp32-tutorial/
 
@@ -8,7 +7,7 @@
 #define MOTOR_STEPS 200
 // different RPM speeds
 #define NORMAL_RPM 120
-// #define FAST_RPM 240
+#define FAST_RPM 240
 // stepper pins
 #define DIR_1 16
 #define STEP_1 17
@@ -22,11 +21,11 @@
 #define MICROSTEPS 1
 // this is the avg. # of steps it takes for the carriage assembly to get from end to end
 #define MAX_STEPS 2500
-
-// #define RIGHT_MIN 950
-// #define RIGHT_MAX 970
-// #define LEFT_MIN 1700
-// #define LEFT_MAX 1720
+// this is the # of steps it takes to get from the left end to the curve.
+#define LEFT_STEPS 500
+// these are the right and left boundaries (in # steps) used for switching between motors
+#define RIGHT_BOUNDARY 2000
+#define LEFT_BOUNDARY 1400
 
 // limit switch pins
 #define LS1 13    // left
@@ -44,10 +43,15 @@ int currentDirection = 1;
 int stepCounter = 0;
 int currentPosition = 0;
 int newPosition = 0;
+bool rightStepperEnabled;
+bool leftStepperEnabled;
+
 // limit switch state globals
 bool LS1_Value = true;
 bool LS2_Value;
 
+// sensor globals
+int newAzimuth = 0;
 
 void setup() {
   // start serial
@@ -67,6 +71,8 @@ void setup() {
   Track_Stepper_Left.setEnableActiveState(LOW);
   Track_Stepper_Right.enable();
   Track_Stepper_Left.enable();
+  rightStepperEnabled = true;
+  leftStepperEnabled = true;
   
   // initialize the carriages at home (far left)
   homeCarriages();
@@ -76,21 +82,39 @@ void setup() {
 
 void loop() {
   if (Serial.available()) {
-    // if there is something sent over serial, check if the value is within 0 and 
-    // the max # of steps, and if so, set it to the new position.
-    int pendingPosition = Serial.parseInt();
-    if (pendingPosition > 0 && pendingPosition <= MAX_STEPS) {
-      newPosition = pendingPosition;
-      Serial.print("New position = ");
-      Serial.println(newPosition);
+    // check if an azimuth value has been sent, and if so, make sure it is between 0 and
+    // 360 degrees inclusive, and if so, set that as the new azimuth, and proceed.
+    int pendingData = Serial.peek();
+    //Serial.print("Pending Data = ");
+    //Serial.println(pendingData);
+    if (pendingData != 10) {
+      // if the pending data is between 0 and 9 (character) AKA 48 and 57 (decimal)
+      int pendingAzimuth = Serial.parseInt();
+      if (pendingAzimuth >= 0 && pendingAzimuth <= 360) {
+        newAzimuth = pendingAzimuth;
+        Serial.print("New azimuth = ");
+        Serial.print(newAzimuth);
+        Serial.println(" degrees");
+        // call this function to turn the azimuth value into a step value.
+        mapAzimuth();
+        // then call this function to move the track motors.
+        horizontalMove();
+      }
     }
-    // then call this function to move the track motors.
-    horizontalMove();
+    else {
+      // else there is nothing sent over serial, so disable the track motors.
+      Track_Stepper_Right.disable();
+      Track_Stepper_Left.disable();
+      rightStepperEnabled = false;
+      leftStepperEnabled = false;
+    }
   }
   else {
     // else there is nothing sent over serial, so disable the track motors.
     Track_Stepper_Right.disable();
     Track_Stepper_Left.disable();
+    rightStepperEnabled = false;
+    leftStepperEnabled = false;
   }
 }
 
@@ -101,6 +125,8 @@ void homeCarriages() {
   Serial.print("LS1 = ");
   Serial.println(LS1_Value);
   while (LS1_Value == true) {
+    //Track_Stepper_Right.move(-MICROSTEPS);
+    //Track_Stepper_Left.move(-MICROSTEPS);
     Track_Steppers.move(-MICROSTEPS, -MICROSTEPS);
     Serial.println("Homing...");
     LS1_Value = digitalRead(LS1);
@@ -119,56 +145,47 @@ void horizontalMove() {
   Serial.print("Next move = ");
   Serial.print(nextMove);
   Serial.println(" steps");
-  
-  // check which direction carriages need to go, enable/disable the appropriate motors
-  int multiplier;
-  if (nextMove < 0) {
-    multiplier = -100;
-    Track_Stepper_Right.disable();    // disable right stepper.
-    Track_Stepper_Left.enable();      // enable left stepper.
-  }
-  else if (nextMove > 0) {
-    multiplier = 100;
-    Track_Stepper_Right.enable();     // enable right stepper.
-    Track_Stepper_Left.disable();     // disable left stepper.
-  }
-  
+  int multiplier = 100;
   // move the track steppers the appropriate amount of steps from the last position,
   // stop moving if a limit switch is tripped (switches not implemented yet).
   // if ((LS1_Value == false) && (LS2_Value == false)) {
-  for (int i = 0; (i < (abs(nextMove))); i = i + 100) {
-    if (multiplier == 100) {
-      if (currentPosition >= 2000) {
-        // if the current position is greater than or equal to 2000 steps.
-        Track_Stepper_Right.disable();              // disable right stepper.
-        Track_Stepper_Left.enable();                // enable left stepper.
+  for (int i = 0; (i < (abs(nextMove))); i = i + multiplier) {
+    if (nextMove > 0) {
+      // if need to go right
+      if (currentPosition >= RIGHT_BOUNDARY) {
+        // if the current position is greater than or equal to the right boundary setting.
+        if (leftStepperEnabled == false) {
+          enableLeftStepper();
+        }
         Serial.println("Left stepper is on...");
         Track_Stepper_Left.move(MICROSTEPS * multiplier);
       }
       else {
-        Track_Stepper_Right.enable();               // enable right stepper.
-        Track_Stepper_Left.disable();               // disable left stepper.
+        if (rightStepperEnabled == false) {
+          enableRightStepper();
+        }
         Serial.println("Right stepper is on...");
         Track_Stepper_Right.move(MICROSTEPS * multiplier);
       }
+      // add to the current position to get the new current position.
+      currentPosition += multiplier;
     }
-    else if (multiplier == -100) {
-      if (currentPosition <= 1300) {
-        // if the current position is less than or equal to 1300 steps.
-        Track_Stepper_Right.enable();          // enable right stepper.
-        Track_Stepper_Left.disable();          // disable left stepper.
+    else if (nextMove < 0) {
+      // if need to go left
+      if (currentPosition <= LEFT_BOUNDARY) {
+        // if the current position is less than or equal to the left boundary setting.
+        enableRightStepper();
         Serial.println("Right stepper is on...");
-        Track_Stepper_Right.move(MICROSTEPS * multiplier);
+        Track_Stepper_Right.move(-MICROSTEPS * multiplier);
       }
       else {
-        Track_Stepper_Right.disable();          // disable right stepper.
-        Track_Stepper_Left.enable();            // enable left stepper.
+        enableLeftStepper();
         Serial.println("Left stepper is on...");
-        Track_Stepper_Left.move(MICROSTEPS * multiplier);
+        Track_Stepper_Left.move(-MICROSTEPS * multiplier);
       }
+      // subtract from the current position to get the new current position.
+      currentPosition -= multiplier;
     }
-    // add to the current position to get the new current position.
-    currentPosition += multiplier;
     // check the limit switches.
     LS1_Value = digitalRead(LS1);
     LS2_Value = digitalRead(LS2);
@@ -183,27 +200,62 @@ void horizontalMove() {
 }
 
 
+void enableRightStepper() {
+  // if the right stepper is already enabled (and left is disabled), don't do anything.
+  // else this configuration is not correct, so change it.
+  if (rightStepperEnabled == true && leftStepperEnabled == false) {
+    return;
+  }
+  else {
+    Track_Stepper_Right.enable();
+    Track_Stepper_Left.disable();
+    rightStepperEnabled = true;
+    leftStepperEnabled = false;
+    Serial.println("Right stepper now enabled...");
+  }
+}
 
-// 225-360/0-45 degrees is the approx. usable range that the track covers, meaning that
-// azimuth > 45 and azimuth < 225 degrees is a deadzone that we cannot cover, and therefore,
-// don't need to worry about.
-//void mapAzimuth() {
-//  if (Serial.available()) {
-//    int newAzimuth = Serial.parseInt();
-//    Serial.print("New azimuth = ");
-//    Serial.print(newAzimuth);
-//    Serial.println(" degrees");
-//    if (newAzimuth >= 0 && newAzimuth <= 45) {
-//      newPosition = map(newAzimuth, 0, 45, LEFT_STEPS, MAX_STEPS);
-//    }
-//    else if (newAzimuth >= 225 && newAzimuth <= 360) {
-//      newPosition = map(newAzimuth, 225, 360, 0, LEFT_STEPS);
-//    }
-//    else {
-//      Serial.println("Azimuth OOR");
-//    }
-//  }
-//}
+void enableLeftStepper() {
+  // if the left stepper is already enabled (and right is disabled), don't do anything.
+  // else this configuration is not correct, so change it.
+  if (rightStepperEnabled == false && leftStepperEnabled == true) {
+    return;
+  }
+  else {
+    Track_Stepper_Right.disable();
+    Track_Stepper_Left.enable();
+    rightStepperEnabled = false;
+    leftStepperEnabled = true;
+    Serial.println("Left stepper now enabled...");
+  }
+}
+
+
+void mapAzimuth() {
+  // Note: 225-360/0-45 degrees is the approx. usable range that the track covers, meaning 
+  // that azimuth > 45 and azimuth < 225 degrees is a deadzone that we cannot cover, and 
+  // therefore, don't need to worry about.
+  
+    if (newAzimuth >= 0 && newAzimuth <= 45) {
+      // map new azimuth value to the appropriate steps from the left, and round to the
+      // nearest hundred. 
+      newPosition = map(newAzimuth, 0, 45, LEFT_STEPS, MAX_STEPS);
+      newPosition = 100 * ((newPosition + 50)/100);
+      Serial.print("New position = ");
+      Serial.println(newPosition);
+    }
+    else if (newAzimuth >= 225 && newAzimuth <= 360) {
+      // map new azimuth value to the appropriate steps from the left, and round to the
+      // nearest hundred.
+      newPosition = map(newAzimuth, 225, 360, 0, LEFT_STEPS);
+      newPosition = 100 * ((newPosition + 50)/100);
+      Serial.print("New position = ");
+      Serial.println(newPosition);
+    }
+    else {
+      Serial.println("Azimuth OOR");
+    }
+}
 
 
 //void countSteps() {
