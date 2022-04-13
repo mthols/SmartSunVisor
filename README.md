@@ -21,23 +21,27 @@ ADC2_CH8 -> IO25 -> Cell 5
 
 ADC2_CH9 -> IO26 -> Cell 6
 
-ADC2_CH7 -> IO27 -> Cell 7
+ADC2_CH6 -> IO14 -> Cell 7
 
-ADC2_CH6 -> IO14 -> Cell 8
+ADC2_CH7 -> IO27 -> Cell 8
 
-#### Track Motor 1 (DRV8825) (Right)
+#### Track Motor 1 (uses DRV8825 driver) (Right)
 
 IO16 -> Direction
 
 IO17 -> Step
 
-#### Track Motor 2 (DRV8825) (Left)
+IO4 -> Enable
+
+#### Track Motor 2 (uses DRV8825 driver) (Left)
 
 IO5 -> Direction
 
 IO18 -> Step
 
-#### Visor Motor (DRV8825) (Right)
+IO21 -> Enable
+
+#### Visor Motor (uses DRV8825 driver)
 
 IO22 -> Direction
 
