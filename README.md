@@ -47,6 +47,8 @@ IO22 -> Direction
 
 IO23 -> Step
 
+IO12 -> Enable
+
 #### Limit Switches
 
 IO13 -> Door window
