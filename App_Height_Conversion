@@ -1,0 +1,190 @@
+// this code is for using the app input to control the steppers.
+
+#include "BluetoothSerial.h"
+#include "SyncDriver.h"
+#include "DRV8825.h"    //https://github.com/laurb9/StepperDriver, https://microcontrollerslab.com/drv8825-stepper-motor-driver-esp32-tutorial/
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+// using a 200-step motor
+#define MOTOR_STEPS 200
+#define NORMAL_RPM 120
+// set microsteps to 1:full step, 2:half step...must match configuration set on physical pins M0, M1, and M2
+#define MICROSTEPS 1
+#define DIR_3 22
+#define STEP_3 23
+#define EN_3 12
+DRV8825 Visor_Stepper(MOTOR_STEPS, DIR_3, STEP_3, EN_3);
+
+int autoMode = 1;
+int manualMode = 0;
+int manualHeight = 0;
+int horizontalRange = 100;
+int oldHeight = 0;
+
+const byte numChars = 32;
+char receivedChars[numChars]; // an array to store the received data
+boolean newData = false;
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("SSVCompanion"); //Bluetooth device name
+  Serial.println("The device started, now you can pair it with bluetooth!");
+  //print settings
+  Serial.println("Starting in Auto Mode...");
+  Serial.print("Horizontal Range = ");
+  Serial.println(horizontalRange);
+  Visor_Stepper.begin(NORMAL_RPM, MICROSTEPS);
+  Visor_Stepper.setEnableActiveState(LOW);
+  Visor_Stepper.enable();
+}
+
+void loop() {
+  recvWithEndMarker();
+  convertAppSettings();
+  visorMovement();
+}
+
+// function to get the input from the app.
+void recvWithEndMarker() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+ 
+  if (SerialBT.available() > 0) {
+    rc = SerialBT.read();
+
+    if (rc != endMarker) {
+      receivedChars[ndx] = rc;
+      ndx++;
+      if (ndx >= numChars) {
+          ndx = numChars - 1;
+      }
+    }
+    else {
+      receivedChars[ndx] = '\0'; // terminate the string
+      ndx = 0;
+      newData = true;
+    }
+  }
+}
+
+// function to convert the input from the app to data we can use (Auto or Manual mode, 
+// horizontal range, and manual height values).
+void convertAppSettings() {
+  if (newData == true) {
+   if (receivedChars[0] == '0' && manualMode == 1) {
+      manualHeight = 0;
+   }
+   else if (receivedChars[0] == '1') {
+      if (receivedChars[1] == '0') {
+        horizontalRange = 100;
+      }
+      else if (manualMode == 1) {
+        manualHeight = 1;
+      }
+   }
+   else if (receivedChars[0] == '2' && manualMode == 1) {
+      manualHeight = 2;
+   }
+   else if (receivedChars[0] == '3' && manualMode == 1) {
+      manualHeight = 3;
+   }
+   else if (receivedChars[0] == '4' && manualMode == 1) {
+      manualHeight = 4;
+   }
+   else if (receivedChars[0] == '5') {
+      if (receivedChars[1] == '0') {
+        horizontalRange = 50;
+      }
+      else if (manualMode == 1) {
+        manualHeight = 5;
+      }
+    }
+    else if (receivedChars[0] == '6') {
+      if (receivedChars[1] == '0') {
+        horizontalRange = 60;
+      }
+      else if (manualMode == 1) {
+        manualHeight = 6;
+      }
+    }
+    else if (receivedChars[0] == '7') {
+      if (receivedChars[1] == '0') {
+        horizontalRange = 70;
+      }
+      else {
+        autoMode = 1;
+        manualMode = 0;
+        Serial.println("Auto Height Mode Activated");
+      }
+    }
+    else if (receivedChars[0] == '8') {
+      if (receivedChars[1] == '0') {
+        horizontalRange = 80;
+      }
+      else {
+        autoMode = 0;
+        manualMode = 1;
+        Serial.println("Manual Height Mode Activated");
+      }
+    }
+    else if (receivedChars[0] == '9') {
+      horizontalRange = 90;
+    }
+    
+    if (manualMode == 1) {
+      Serial.print("Manual Height = ");
+      Serial.println(manualHeight);
+    }
+   Serial.print("Horizontal Range = ");
+   Serial.println(horizontalRange);
+   newData = false;
+ }
+}
+
+// function to move the visor to the correct position.
+void visorMovement() {
+  
+  // if manual mode is activated.
+  if (manualMode == 1) {
+
+    // find the difference between the set height and the last height (current).
+    int nextMove = manualHeight - oldHeight;
+
+    // if the next move isn't zero steps.
+    if (nextMove != 0) {
+    
+      // print the new move value.
+      Serial.print("Next visor move = ");
+      Serial.print(nextMove);
+      Serial.println(" steps");
+      
+      // set multiplier (how many steps are an inch?)
+      int multiplier = 100;
+
+      // move the visor up or down accordingly.
+      for (int i = 0; i < (abs(nextMove)); i++) {
+        if (nextMove < 0) {
+          Serial.println("Visor moving up...");
+          Visor_Stepper.move(-MICROSTEPS * multiplier);
+        }
+        else if (nextMove > 0) {
+          Serial.println("Visor moving down...");
+          Visor_Stepper.move(MICROSTEPS * multiplier);
+        }
+      }
+      
+      // set the old height to the new height.
+      oldHeight = manualHeight;
+      Serial.print("Current Height: ");
+      Serial.print(oldHeight);
+      Serial.println(" inches from the enclosure.");
+    }
+  }  
+}
+
