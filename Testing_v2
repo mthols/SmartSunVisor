@@ -62,6 +62,7 @@ int horizontalRange = 100;
 const byte numChars = 32;
 char receivedChars[numChars]; // an array to store the received data
 boolean newData = false;
+int numberOfBytes = 0;
 
 // globals for limit switches...true = not pressed
 bool LS1_Value = true;
@@ -89,9 +90,9 @@ void setup() {
   Visor_Stepper.disableOutputs();
 
   homeCarriages();
-  Serial.println("Carriages homed");
+  Serial.print("...Carriages homed...");
   homeVisor();
-  Serial.println("Visor homed");
+  Serial.println("Visor homed...");
 
   // set the track motors' settings after being homed...
   Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
@@ -323,7 +324,8 @@ void homeCarriages() {
   Track_Stepper_Left.setMaxSpeed(HOME_SPEED);
   Track_Stepper_Right.setAcceleration(HOME_ACCEL);
   Track_Stepper_Left.setAcceleration(HOME_ACCEL);
-  
+
+  Serial.println();
   Serial.println("Homing...");
   
   while (LS1_Value) {
@@ -508,6 +510,7 @@ void recvWithEndMarker() {
         Serial.print(receivedChars[i]);
       }
       Serial.println();
+      numberOfBytes = ndx;
       ndx = 0;
       newData = true;
     }
@@ -518,42 +521,156 @@ void recvWithEndMarker() {
 // function to convert the input from the app to data we can use (Auto or Manual mode, 
 // horizontal range, and manual height values).
 void convertAppSettings() {
+  int Day = 0;
+  int Month = 0;
+  int Year = 0;
+  int Hour = 0;
+  int Minute = 0;
+  int Second = 0;
+  float latitude = 0.0;
+
+  // if there is new data available
   if (newData == true) {
-    // if the size of the character array is eight bytes, then it is DDMMYYYY
-    if (sizeof(receivedChars) == 8) {
-      // for each element in the array
-      for (int i = 0; i < 8; i++) {
-        // change the character element into an integer and place it into the respective place
-        switch (i) {
-          case 0:
-            Day = (receivedChars[i] - '0') * 10;
-            break;
-          case 1:
-            Day += (receivedChars[i] - '0');
-            break;
-          case 2:
-            Month = (receivedChars[i] - '0') * 10;
-            break;
-          case 3:
-            Month += (receivedChars[i] - '0');
-            break;
-          case 4:
-            Year = (receivedChars[i] - '0') * 1000;
-            break;
-          case 5:
-            Year += (receivedChars[i] - '0') * 100;
-            break;
-          case 6:
-            Year += (receivedChars[i] - '0') * 10;
-            break;
-          case 7:
-            Year += (receivedChars[i] - '0');
-            break;
+    
+    Serial.print("Size of data in bytes: ");
+    Serial.println(numberOfBytes);
+    
+    // if the size of the character array is eight bytes, then it is either the date or
+    // the latitude.
+    if (numberOfBytes == 8) {
+      
+      // if there is a decimal in the first four elements, then it is the latitude.
+      if ((receivedChars[1] == '.') || (receivedChars[2] == '.') 
+          || (receivedChars[3] == '.')) {
+                  
+        Serial.println("Latitude incoming...");
+        // go through each element and convert the array into a float
+        for (int i = 0; i < numberOfBytes; i++) {
+          switch (i) {
+            case 0:
+              // (x).xxxxxx
+              if (receivedChars[1] == '.') {
+                latitude = (receivedChars[i] - '0');
+              }
+              // (x)x.xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude = (receivedChars[i] - '0') * 10;
+              }
+              break;
+            case 1:
+              // x(.)xxxxxx
+              if (receivedChars[1] == '.') {
+                break;
+              }
+              // x(x).xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0');
+              }
+              break;
+            case 2:
+              // x.(x)xxxxx
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 10;
+              }
+              // xx(.)xxxxx
+              else if (receivedChars[2] == '.') {
+                break;
+              }
+              break;
+            case 3:
+              // x.x(x)xxxx
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 100;
+              }
+              // xx.(x)xxxx
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0') / 10;
+              }
+              break;
+            case 4:
+              // x.xx(x)xxx
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 1000;
+              }
+              // xx.x(x)xxx
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0') / 100;
+              }
+              break;
+            case 5:
+              // x.xxx(x)xx
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 10000;
+              }
+              // xx.xx(x)xx
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0') / 1000;
+              }
+              break;
+            case 6:
+              // x.xxxx(x)x
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 100000;
+              }
+              // xx.xxx(x)x
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0') / 10000;
+              }
+              break;
+            case 7:
+              // x.xxxxx(x)
+              if (receivedChars[1] == '.') {
+                latitude += (receivedChars[i] - '0') / 1000000;
+              }
+              // xx.xxxx(x)
+              else if (receivedChars[2] == '.') {
+                latitude += (receivedChars[i] - '0') / 100000;
+              }
+              break;
+          }
         }
+        Serial.print("Latitude (degrees): ");
+        Serial.println(latitude);
+      }
+      else {
+        Serial.println("Date incoming...");
+        // for each element in the array
+        for (int i = 0; i < 8; i++) {
+          // change the character element into an integer and place it into the respective place
+          switch (i) {
+            case 0:
+              Day = (receivedChars[i] - '0') * 10;
+              break;
+            case 1:
+              Day += (receivedChars[i] - '0');
+              break;
+            case 2:
+              Month = (receivedChars[i] - '0') * 10;
+              break;
+            case 3:
+              Month += (receivedChars[i] - '0');
+              break;
+            case 4:
+              Year = (receivedChars[i] - '0') * 1000;
+              break;
+            case 5:
+              Year += (receivedChars[i] - '0') * 100;
+              break;
+            case 6:
+              Year += (receivedChars[i] - '0') * 10;
+              break;
+            case 7:
+              Year += (receivedChars[i] - '0');
+              break;
+          }
+        }
+          Serial.print(Day); Serial.print("/"); Serial.print(Month); Serial.print("/");
+          Serial.println(Year);
       }
     }
     // of the size of the character array is six bytes, then it is HHMMSS
-    else if (sizeof(receivedChars == 6)) {
+    else if (numberOfBytes == 6) {
+      Serial.println("Time incoming...");
       for (int i = 0; i < 6; i++) {
         switch (i) {
           case 0:
@@ -576,7 +693,10 @@ void convertAppSettings() {
             break;
         }
       }
+        Serial.print(Hour); Serial.print(":"); Serial.print(Minute); Serial.print(":");
+        Serial.println(Second);
     }
+    // else a manual mode/auto mode, manual height, or horizontal range packet was sent.
     else {
       if (receivedChars[0] == '0' && manualMode == 1) {
         manualHeight = 0;
@@ -657,6 +777,7 @@ void convertAppSettings() {
         Serial.println(manualHeight);
       }
     }
+
     // set the new data boolean to false before exiting
     newData = false;
   }
@@ -683,13 +804,13 @@ void visorMovement() {
   }
 }
 
-int calculateAltitude(int) {
-  // altitude = sin^(-1) * (sin(latitude)*sin(declination angle)
-  // + cos(latitude)*cos(declination angle)*cos(solar hour angle))
-  // first, find the declination angle of the sun...
-  // https://solarsena.com/solar-declination-angle-calculator/
-  float declinationAngle = sin(-23.44) * cos(360/365 * (daysSinceJan1stUTC + 10));
-
-  // then, find the solar hour angle
-  float solarHourAngle = 15 * (;
-}
+//int calculateAltitude(int) {
+//  // altitude = sin^(-1) * (sin(latitude)*sin(declination angle)
+//  // + cos(latitude)*cos(declination angle)*cos(solar hour angle))
+//  // first, find the declination angle of the sun...
+//  // https://solarsena.com/solar-declination-angle-calculator/
+//  float declinationAngle = sin(-23.44) * cos(360/365 * (daysSinceJan1stUTC + 10));
+//
+//  // then, find the solar hour angle
+//  float solarHourAngle = 15 * (;
+//}
