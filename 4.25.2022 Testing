@@ -55,6 +55,7 @@ void setup() {
 void loop() {
   recvWithEndMarker();
   convertAppSettings();
+  delay(1000);
   visorMovement(calculateAltitude());
 }
 
@@ -455,7 +456,6 @@ void visorMovement(int altitude) {
       Serial.println("Visor set to zero inches...");
     }
     // move the visor to the next position:
-    Serial.println("Moving visor...");
     // Visor_Stepper.runToPosition();
   }
 }
@@ -464,20 +464,25 @@ void visorMovement(int altitude) {
 int calculateAltitude() {
   // altitude = sin^(-1) * (sin(latitude)*sin(declination angle)
   // + cos(latitude)*cos(declination angle)*cos(solar hour angle))
-  
-  // first, find the declination angle of the sun (in radians):
-  // https://solarsena.com/solar-declination-angle-calculator/
-  float declinationAngle = (sin(-23.44 * 180.0/PI) * cos(360.0/365.0 * (float(daysSinceJan1st) + 10.0))) * (PI/180.0);
 
-  // then, find the solar hour angle (in radians):
-  // https://solarsena.com/solar-hour-angle-calculator-formula/
-  float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI/180.0);
-  
-  // finally, we can find the altitude of the sun (in degrees):
-  // https://solarsena.com/solar-elevation-angle-altitude/
-  float altitude = (asin(sin(latitude) * sin(declinationAngle) + cos(latitude) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
+  if (latitude > 0) {
+    // first, find the declination angle of the sun (in radians):
+    // https://solarsena.com/solar-declination-angle-calculator/
+    float declinationAngle = (sin(-23.44 * 180.0/PI) * cos(360.0/365.0 * (float(daysSinceJan1st) + 10.0))) * (PI/180.0);
 
-  Serial.print("Altitude (degrees) = "); Serial.println(altitude);
+    // then, find the solar hour angle (in radians):
+    // https://solarsena.com/solar-hour-angle-calculator-formula/
+    float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI/180.0);
   
-  return altitude;
+    // finally, we can find the altitude of the sun (in degrees):
+    // https://solarsena.com/solar-elevation-angle-altitude/
+    float altitude = (asin(sin(latitude) * sin(declinationAngle) + cos(latitude) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
+
+    Serial.print("Altitude (degrees) = "); Serial.println(altitude);
+  
+    return altitude;
+  }
+  else {
+    return 0;
+  }
 }
