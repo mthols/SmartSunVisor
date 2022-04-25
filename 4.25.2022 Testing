@@ -28,6 +28,7 @@ BluetoothSerial SerialBT;
 float latitude = 0.0;
 float localSolarTime = 0.0;
 int daysSinceJan1st = 0;
+int oldAltitude = 0;
 
 // globals for app...
 int autoMode = 1;
@@ -416,7 +417,6 @@ void convertAppSettings() {
 
 // need
 void visorMovement(int altitude) {
-  
   // if manual mode is activated:
   if (manualMode == 1) {
     Serial.print("Visor Height: "); Serial.print(manualHeight * 60);
@@ -424,39 +424,45 @@ void visorMovement(int altitude) {
   }
   // if auto mode is activated:
   else if (autoMode == 1) {
-    
-    // as altitude increases, decrease the length of the visor from the bottom
-    // of the track enclosure:
-    if (altitude <= 40) {
-      // Visor_Stepper.moveTo(6 * INCH_STEPS);
-      Serial.println("Visor set to six inches...");
-    }
-    else if ((altitude > 40) && (altitude <= 50)) {
-      // Visor_Stepper.moveTo(5 * INCH_STEPS);
-      Serial.println("Visor set to five inches...");
-    }
-    else if (altitude > 50 && altitude <= 60) {
-      // Visor_Stepper.moveTo(4 * INCH_STEPS);
-      Serial.println("Visor set to four inches...");
-    }
-    else if (altitude > 60 && altitude <= 70) {
-      //Visor_Stepper.moveTo(3 * INCH_STEPS);
-      Serial.println("Visor set to three inches...");
-    }
-    else if (altitude > 70 && altitude <= 80) {
-      // Visor_Stepper.moveTo(2 * INCH_STEPS);
-      Serial.println("Visor set to two inches...");
-    }
-    else if (altitude > 80 && altitude <= 90) {
-      // Visor_Stepper.moveTo(1 * INCH_STEPS);
-      Serial.println("Visor set to one inch...");
+    // if the new altitude is different:
+    if (oldAltitude != altitude) {
+      // as altitude increases, decrease the length of the visor from the bottom
+      // of the track enclosure:
+      if (altitude <= 40) {
+        // Visor_Stepper.moveTo(6 * INCH_STEPS);
+        Serial.println("Visor set to six inches...");
+      }
+      else if ((altitude > 40) && (altitude <= 50)) {
+        // Visor_Stepper.moveTo(5 * INCH_STEPS);
+        Serial.println("Visor set to five inches...");
+      }
+      else if (altitude > 50 && altitude <= 60) {
+        // Visor_Stepper.moveTo(4 * INCH_STEPS);
+        Serial.println("Visor set to four inches...");
+      }
+      else if (altitude > 60 && altitude <= 70) {
+        //Visor_Stepper.moveTo(3 * INCH_STEPS);
+        Serial.println("Visor set to three inches...");
+      }
+      else if (altitude > 70 && altitude <= 80) {
+        // Visor_Stepper.moveTo(2 * INCH_STEPS);
+        Serial.println("Visor set to two inches...");
+      }
+      else if (altitude > 80 && altitude <= 90) {
+        // Visor_Stepper.moveTo(1 * INCH_STEPS);
+        Serial.println("Visor set to one inch...");
+      }
+      else {
+        // Visor_Stepper.moveTo(0 * INCH_STEPS);
+        Serial.println("Visor set to zero inches...");
+      }
+      // move the visor to the next position:
+      // Visor_Stepper.runToPosition();
+      oldAltitude = altitude;
     }
     else {
-      // Visor_Stepper.moveTo(0 * INCH_STEPS);
-      Serial.println("Visor set to zero inches...");
-    }
-    // move the visor to the next position:
-    // Visor_Stepper.runToPosition();
+      return;
+    }   
   }
 }
 
