@@ -29,6 +29,7 @@ float latitude = 0.0;
 float localSolarTime = 0.0;
 int daysSinceJan1st = 0;
 int oldAltitude = 0;
+float oldLatitude = 0.0;
 
 // globals for app...
 int autoMode = 1;
@@ -56,7 +57,7 @@ void setup() {
 void loop() {
   recvWithEndMarker();
   convertAppSettings();
-  delay(1000);
+  //delay(1000);
   visorMovement(calculateAltitude());
 }
 
@@ -287,6 +288,90 @@ void convertAppSettings() {
         Serial.println(daysSinceJan1st);
       }
     }
+    else if (numberOfBytes == 7) {
+      if ((receivedChars[1] == '.') || (receivedChars[2] == '.') 
+          || (receivedChars[3] == '.')) {
+                  
+        Serial.println("Latitude incoming...");
+        // go through each element and convert the array into a float
+        for (int i = 0; i < numberOfBytes; i++) {
+          switch (i) {
+            case 0:
+              // (x).xxxxxx
+              if (receivedChars[1] == '.') {
+                latitude = float(receivedChars[i] - '0');
+              }
+              // (x)x.xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude = float(receivedChars[i] - '0') * 10.0;
+              }
+              break;
+            case 1:
+              // x(.)xxxxxx
+              if (receivedChars[1] == '.') {
+                break;
+              }
+              // x(x).xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0');
+              }
+              break;
+            case 2:
+              // x.(x)xxxxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              // xx(.)xxxxx
+              else if (receivedChars[2] == '.') {
+                break;
+              }
+              break;
+            case 3:
+              // x.x(x)xxxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              // xx.(x)xxxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              break;
+            case 4:
+              // x.xx(x)xxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              // xx.x(x)xxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              break;
+            case 5:
+              // x.xxx(x)xx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              // xx.xx(x)xx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              break;
+            case 6:
+              // x.xxxx(x)x
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100000.0;
+              }
+              // xx.xxx(x)x
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              break;
+          }
+        }
+        Serial.print("Latitude (degrees): ");
+        Serial.println(latitude);
+      }
+    }
     // of the size of the character array is six bytes, then it is HHMMSS
     else if (numberOfBytes == 6) {
       Serial.println("Time incoming...");
@@ -471,22 +556,26 @@ int calculateAltitude() {
   // altitude = sin^(-1) * (sin(latitude)*sin(declination angle)
   // + cos(latitude)*cos(declination angle)*cos(solar hour angle))
 
-  if (latitude > 0) {
+  if (latitude > 0 && (latitude != oldLatitude)) {
     // first, find the declination angle of the sun (in radians):
     // https://solarsena.com/solar-declination-angle-calculator/
     float declinationAngle = (sin(-23.44 * 180.0/PI) * cos(360.0/365.0 * (float(daysSinceJan1st) + 10.0))) * (PI/180.0);
+    Serial.print("Declination angle (radians) = "); Serial.println(declinationAngle);
 
     // then, find the solar hour angle (in radians):
     // https://solarsena.com/solar-hour-angle-calculator-formula/
     float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI/180.0);
-  
+    Serial.print("Solar hour angle (radians) = "); Serial.println(solarHourAngle);
+
     // finally, we can find the altitude of the sun (in degrees):
     // https://solarsena.com/solar-elevation-angle-altitude/
-    float altitude = (asin(sin(latitude) * sin(declinationAngle) + cos(latitude) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
+    float altitude = (asin(sin(latitude * PI/180) * sin(declinationAngle) + cos(latitude * PI/180) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
 
     Serial.print("Altitude (degrees) = "); Serial.println(altitude);
   
     return altitude;
+
+    oldLatitude = latitude;
   }
   else {
     return 0;
