@@ -1,4 +1,4 @@
-// testing on 4.25.2022
+// testing on 4.26.2022
 
 #include "math.h"
 #include <BluetoothSerial.h>
@@ -513,34 +513,11 @@ void visorMovement(int altitude) {
     if (oldAltitude != altitude) {
       // as altitude increases, decrease the length of the visor from the bottom
       // of the track enclosure:
-      if (altitude <= 40) {
-        // Visor_Stepper.moveTo(6 * INCH_STEPS);
-        Serial.println("Visor set to six inches...");
-      }
-      else if ((altitude > 40) && (altitude <= 50)) {
-        // Visor_Stepper.moveTo(5 * INCH_STEPS);
-        Serial.println("Visor set to five inches...");
-      }
-      else if (altitude > 50 && altitude <= 60) {
-        // Visor_Stepper.moveTo(4 * INCH_STEPS);
-        Serial.println("Visor set to four inches...");
-      }
-      else if (altitude > 60 && altitude <= 70) {
-        //Visor_Stepper.moveTo(3 * INCH_STEPS);
-        Serial.println("Visor set to three inches...");
-      }
-      else if (altitude > 70 && altitude <= 80) {
-        // Visor_Stepper.moveTo(2 * INCH_STEPS);
-        Serial.println("Visor set to two inches...");
-      }
-      else if (altitude > 80 && altitude <= 90) {
-        // Visor_Stepper.moveTo(1 * INCH_STEPS);
-        Serial.println("Visor set to one inch...");
-      }
-      else {
-        // Visor_Stepper.moveTo(0 * INCH_STEPS);
-        Serial.println("Visor set to zero inches...");
-      }
+      // minAltitude = ? = sunrise/sunset angle (how to find?)
+      int nextPos = map(altitude, MIN_ALTITUDE, maxAltitude, 0, (6 * INCH_STEPS));
+      Serial.print("Visor Height: "); Serial.print(nextPos);
+      Serial.println(" inches from the bottom of the enclosure.");
+      
       // move the visor to the next position:
       // Visor_Stepper.runToPosition();
       oldAltitude = altitude;
@@ -562,8 +539,9 @@ int calculateAltitude() {
     float declinationAngle = (sin(-23.44 * PI/180.0) * cos(360.0/365.0 * (float(daysSinceJan1st) + 10.0)));
     Serial.print("Declination angle (radians) = "); Serial.println(declinationAngle);
 
-    Serial.print("Experimental Altitude: ");
-    Serial.println(90 - latitude + (declinationAngle * 180/PI));
+    // then, find the maximum altitude for the day:
+    float maxAltitude = 90.0 - latitude + (declinationAngle * 180.0/PI);
+    Serial.print("Maximum altitude for the day: "); Serial.println(maxAltitude);
     
     // then, find the solar hour angle (in radians):
     // https://solarsena.com/solar-hour-angle-calculator-formula/
@@ -572,7 +550,7 @@ int calculateAltitude() {
 
     // finally, we can find the altitude of the sun (in degrees):
     // https://solarsena.com/solar-elevation-angle-altitude/
-    float altitude = (asin(sin(latitude * PI/180) * sin(declinationAngle) + cos(latitude * M_PI/180) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
+    float altitude = (asin(sin(latitude * PI/180) * sin(declinationAngle) + cos(latitude * PI/180) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0/PI);
 
     Serial.print("Altitude (degrees) = "); Serial.println(altitude);
   
