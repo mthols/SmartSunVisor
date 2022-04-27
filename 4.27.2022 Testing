@@ -490,10 +490,12 @@ void visorMovement(int altitude) {
     // and if the altitude is greater than zero, react:
     if (altitude > 0) {
       // map the altitude from (0-max altitude) to (0-max steps):
-      float nextPos = map(altitude, 0, maxAltitude, 0.0, (6.0 * float(INCH_STEPS)));
+      int nextPos = map(altitude, 0, maxAltitude, 0, (6 * INCH_STEPS));
       // **altitude and nextPos are indirectly proportional**
-      nextPos = (6.0 * float(INCH_STEPS)) - float(nextPos);
-      Serial.print("Visor Height: "); Serial.print(nextPos); Serial.println(" inches.");
+      nextPos = (6 * INCH_STEPS) - nextPos;
+      float nextInches = ((6.0 * float(INCH_STEPS)) - float(nextPos)) / float(INCH_STEPS);
+      Serial.print("Visor Height: "); Serial.print(nextPos); Serial.println(" steps.");
+      Serial.print("Visor Height: "); Serial.print(nextInches); Serial.println(" inches.");
     }
   }
 }
@@ -511,7 +513,7 @@ int calculateAltitude() {
       Serial.print("Declination angle (radians): "); Serial.println(declinationAngle);
 
       // then, find the maximum altitude for the day:
-      // https://sciencing.com/many-hours-daylight-summer-8196183.html
+      // https://sciencing.com/calculate-suns-altitude-8556649.html
       maxAltitude = 90.0 - latitude + (declinationAngle * 180.0 / PI);
       Serial.print("Maximum altitude for the day (degrees): "); Serial.println(maxAltitude);
 
