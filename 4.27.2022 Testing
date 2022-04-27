@@ -503,23 +503,23 @@ void visorMovement(int altitude) {
 
 int calculateAltitude() {
   // if there was latitude data and auto mode is on:
-  if ((latitude > 0) && (autoMode == 1)) {
+  if ((latitude > 0) && (daysSinceJan1st > 0) && (localSolarTime > 0) && (autoMode == 1)) {
     // if the delay is over:
     if ((millis() - lastMillis) >= ALTITUDE_CALC_DELAY) {
 
       // first, find the declination angle of the sun (in radians):
       // https://solarsena.com/solar-declination-angle-calculator/
-      float declinationAngle = (sin(-23.44 * PI / 180.0) * cos(360.0 / 365.0 * (float(daysSinceJan1st) + 10.0)));
+      float declinationAngle = asin(sin(-23.44 * PI/180.0) * cos(360.0/365.0 * (float(daysSinceJan1st) + 10.0)));
       Serial.print("Declination angle (radians): "); Serial.println(declinationAngle);
 
       // then, find the maximum altitude for the day:
       // https://sciencing.com/calculate-suns-altitude-8556649.html
-      maxAltitude = 90.0 - latitude + (declinationAngle * 180.0 / PI);
+      maxAltitude = 90.0 - latitude + (declinationAngle * 180.0/PI);
       Serial.print("Maximum altitude for the day (degrees): "); Serial.println(maxAltitude);
 
       // then, find the solar hour angle (in radians):
       // https://solarsena.com/solar-hour-angle-calculator-formula/
-      float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI / 180.0);
+      float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI/180.0);
       Serial.print("Solar hour angle (radians): "); Serial.println(solarHourAngle);
 
       // finally, we can find the altitude of the sun (in degrees):
