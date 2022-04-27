@@ -1,9 +1,16 @@
 # SmartSunVisor
 Repository for our senior project 21-22
 
-Click on "Main_Program" for the main code to go on the ESP32-WROOM-32E.
+## Some helpful links:
+SPA Calculator: https://midcdmz.nrel.gov/solpos/spa.html
 
-Click on "Smartphone_App" for the code to create the Android application.
+Calculating Solar Elevation (AKA Altitude) Angle: https://solarsena.com/solar-elevation-angle-altitude/
+
+Calculating Solar Hour Angle: https://solarsena.com/solar-hour-angle-calculator-formula/
+
+Calculating the maximum altitude for the sun on any given day:https://sciencing.com/calculate-suns-altitude-8556649.html
+
+Calculating Solar Declination Angle: https://solarsena.com/solar-declination-angle-calculator/
 
 ESP32-WROOM-32E Pinout
 -----------------------------------------
