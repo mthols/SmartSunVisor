@@ -12,6 +12,8 @@ Calculating the maximum altitude for the sun on any given day:https://sciencing.
 
 Calculating Solar Declination Angle: https://solarsena.com/solar-declination-angle-calculator/
 
+AccelStepper Arduino Library Reference: http://www.airspayce.com/mikem/arduino/AccelStepper/
+
 ESP32-WROOM-32E Pinout
 -----------------------------------------
 #### Photovoltaic Cells
