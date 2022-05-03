@@ -76,7 +76,7 @@ unsigned long lastHorizontalMoveTime;
 #define NOVEMBER 30
 #define DECEMBER 31
 #define ALTITUDE_CALC_DELAY 10000
-unsigned long lastMillis = 0;
+unsigned long lastMillis = -ALTITUDE_CALC_DELAY;
 int maxAltitude = 0;
 int daysSinceJan1st = 117;  // normally 0, set for testing
 float localSolarTime = 17;  // normally 0.0, set for testing
@@ -140,12 +140,12 @@ void setup() {
 
 void loop() {
   testing();
-  float azimuth = getAzimuth();
-  int steps = mapAzimuth(azimuth);
-  horizontalMove(steps);
   recvWithEndMarker();
   convertAppSettings();
+  float azimuth = getAzimuth();
+  int steps = mapAzimuth(azimuth);
   visorMovement(calculateAltitude());
+  horizontalMove(steps);
 }
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^SETUP AND LOOP^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^//
 //////////////////////////////////////////////////////////////////////////////
@@ -448,12 +448,12 @@ float getAzimuth () {
 int mapAzimuth(int newAzimuth) {
   int newPos;
   if ((newAzimuth >= 0) && (newAzimuth <= 45)) {
-    newPos = map(newAzimuth, 0, 45, STEPS_TO_ZERO_DEGREES * (horizontalRange / 100), MAX_STEPS * (horizontalRange / 100));
+    newPos = map(newAzimuth, 0, 45, (STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0)), (MAX_STEPS * (horizontalRange / 100.0)));
     //Serial.print("New position = ");
     //Serial.println(newPos);
   }
   else if ((newAzimuth >= 225) && (newAzimuth <= 360)) {
-    newPos = map(newAzimuth, 225, 360, 0, STEPS_TO_ZERO_DEGREES * (horizontalRange / 100));
+    newPos = map(newAzimuth, 225, 360, 0, (STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0)));
     //Serial.print("New position = ");
     //Serial.println(newPos);
   }
@@ -482,10 +482,8 @@ void horizontalMove(int newPosition) {
   int leftBoundary;
   int difference = newPosition - Track_Stepper_Right.currentPosition();
   
-  if ((abs(difference) > CHANGE_THRESHOLD) && ((millis() - lastMillis) >= HORIZONTAL_MOVE_DELAY)) {
+  if ((abs(difference) > CHANGE_THRESHOLD) && ((millis() - lastHorizontalMoveTime) >= HORIZONTAL_MOVE_DELAY)) {
 
-    Visor_Stepper.enableOutputs();
-    Visor_Stepper.runToNewPosition(0);
     Serial.print("New position = "); Serial.println(newPosition);
     Serial.print("Difference = "); Serial.println(difference);
     
@@ -593,7 +591,12 @@ void horizontalMove(int newPosition) {
     Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
     lastHorizontalMoveTime = millis();
   }
+  // turn off the track motors when not moving.
+  Track_Stepper_Right.disableOutputs();
+  Track_Stepper_Left.disableOutputs();
 
+  // make sure that the visor motor is always on to hold it in place.
+  Visor_Stepper.enableOutputs();
 
   // if the left switch is hit, move right a little, and set the current position
   // as the new zero position.
@@ -967,6 +970,8 @@ void convertAppSettings() {
             if (receivedChars[2] == '0') {
               horizontalRange = 100;
               Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+              Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+              Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
             }
           }
           else if (manualMode == 1) {
@@ -995,6 +1000,8 @@ void convertAppSettings() {
           if (receivedChars[1] == '0') {
             horizontalRange = 50;
             Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+            Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+            Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
           }
           else if (manualMode == 1) {
             manualHeight = 5;
@@ -1005,6 +1012,8 @@ void convertAppSettings() {
           if (receivedChars[1] == '0') {
             horizontalRange = 60;
             Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+            Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+            Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
           }
           else if (manualMode == 1) {
             manualHeight = 6;
@@ -1015,6 +1024,8 @@ void convertAppSettings() {
           if (receivedChars[1] == '0') {
             horizontalRange = 70;
             Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+            Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+            Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
           }
           else {
             autoMode = 1;
@@ -1026,6 +1037,8 @@ void convertAppSettings() {
           if (receivedChars[1] == '0') {
             horizontalRange = 80;
             Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+            Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+            Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
           }
           else {
             autoMode = 0;
@@ -1036,6 +1049,8 @@ void convertAppSettings() {
         case '9':
           horizontalRange = 90;
           Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
+          Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
           break;
       }
     }
@@ -1108,6 +1123,22 @@ void visorMovement(int altitude) {
       // **altitude and nextPos are indirectly proportional**
       nextPos = (6 * INCH_STEPS) - nextPos;
       Serial.print("Visor Height: "); Serial.print(float(nextPos) / float(INCH_STEPS)); Serial.println(" inches.");
+
+////////////////////////////////////////////////////////////////
+      // currently under testing
+      // insert code to move carriages to a position that will allow 
+      // the visor to turn w/o problems
+      if (nextPos != Visor_Stepper.currentPosition()) {
+        if ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV)) {
+          horizontalMove(RIGHT_BOUNDARY_REV);
+        }
+        else if ((Track_Stepper_Right.currentPosition() > LEFT_BOUNDARY_REV) 
+                && (Track_Stepper_Right.currentPosition() < LEFT_BOUNDARY_FOR)) {
+          horizontalMove(LEFT_BOUNDARY_REV);
+        }
+      }
+/////////////////////////////////////////////////////////////////
+      
       // move the visor to the next position:
       Visor_Stepper.runToNewPosition(nextPos);
     }
