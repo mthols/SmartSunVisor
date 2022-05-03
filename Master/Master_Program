@@ -1,0 +1,1121 @@
+// Motors + Azimuth + Altitude + Manual Height (App) + Auto Height (App) + Horizontal Range (App)
+
+#include "math.h"
+#include <AccelStepper.h>       // http://www.airspayce.com/mikem/arduino/AccelStepper/
+#include <BluetoothSerial.h>
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+#define DIR_1 16
+#define STEP_1 17
+#define EN_1 4
+#define DIR_2 5
+#define STEP_2 18
+#define EN_2 21
+#define DIR_3 22
+#define STEP_3 23
+#define EN_3 12
+
+// Define the steppers and the pins they will use:
+AccelStepper Track_Stepper_Right(AccelStepper::DRIVER, STEP_1, DIR_1);
+AccelStepper Track_Stepper_Left(AccelStepper::DRIVER, STEP_2, DIR_2);
+AccelStepper Visor_Stepper(AccelStepper::DRIVER, STEP_3, DIR_3);
+
+// when currentPosition < LEFT_BOUNDARY_FOR, both steppers are on.
+// when LEFT_BOUNDARY_FOR <= currentPosition <= RIGHT_BOUNDARY_FOR, right stepper on.
+// when currentPosition > RIGHT_BOUNDARY_FOR, left stepper is on.
+#define LEFT_BOUNDARY_FOR 930
+#define RIGHT_BOUNDARY_FOR 1900
+
+// when currentPosition > RIGHT_BOUNDARY_REV_2, right stepper is on.
+// when currentPosition > RIGHT_BOUNDARY_REV, left stepper is on.
+// when LEFT_BOUNDARY_REV <= currentPosition <= RIGHT_BOUNDARY_REV, right stepper on.
+// when currentPosition < LEFT_BOUNDARY_REV, both steppers are on.
+#define RIGHT_BOUNDARY_REV_2 2400
+#define RIGHT_BOUNDARY_REV 1400
+#define LEFT_BOUNDARY_REV 750
+
+// the minimum amount of steps that need to change to move:
+#define CHANGE_THRESHOLD 100
+
+#define STEPS_TO_ZERO_DEGREES 2300
+#define MAX_STEPS 2550
+#define MOTOR_ACCEL 900
+#define HOME_ACCEL 500
+#define MAX_SPEED 800
+#define CURVE_SPEED 400
+#define HOME_SPEED 200
+
+// number of steps in an inch:
+#define INCH_STEPS 55
+
+// left and right limit switch pins:
+#define LS1 13
+#define LS2 19
+
+// for azimuth calculations:
+#define AZIMUTH_SAMPLES 10
+#define HORIZONTAL_MOVE_DELAY 2000
+unsigned long lastHorizontalMoveTime;
+
+// for altitude calculations:
+#define JANUARY 31
+#define FEBRUARY 28
+#define MARCH 31
+#define APRIL 30
+#define MAY 31
+#define JUNE 30
+#define JULY 31
+#define AUGUST 31
+#define SEPTEMBER 30
+#define OCTOBER 31
+#define NOVEMBER 30
+#define DECEMBER 31
+#define ALTITUDE_CALC_DELAY 10000
+unsigned long lastMillis = 0;
+int maxAltitude = 0;
+int daysSinceJan1st = 117;  // normally 0, set for testing
+float localSolarTime = 17;  // normally 0.0, set for testing
+float latitude = 37.38694;  // normally 0.0, set for testing
+
+// globals for app:
+int autoMode = 1;
+int manualMode = 0;
+int manualHeight = 0;
+int horizontalRange = 100;
+const byte numChars = 32;
+char receivedChars[numChars];
+boolean newData = false;
+int numberOfBytes = 0;
+
+// globals for limit switches...true = not pressed
+bool LS1_Value = true;
+bool LS2_Value = true;
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////SETUP AND LOOP//////////////////////////////////
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("SSVCompanion"); //start Bluetooth
+  pinMode(LS1, INPUT_PULLUP);
+  pinMode(LS2, INPUT_PULLUP);
+
+  Track_Stepper_Right.setEnablePin(EN_1);
+  Track_Stepper_Right.setPinsInverted(false, false, true);
+  Track_Stepper_Right.enableOutputs();
+
+  Track_Stepper_Left.setEnablePin(EN_2);
+  Track_Stepper_Left.setPinsInverted(false, false, true);
+  Track_Stepper_Left.enableOutputs();
+
+  Visor_Stepper.setMaxSpeed(MAX_SPEED);
+  Visor_Stepper.setAcceleration(MOTOR_ACCEL);
+  Visor_Stepper.setEnablePin(EN_3);
+  Visor_Stepper.setPinsInverted(false, false, true);
+  Visor_Stepper.disableOutputs();
+
+  homeCarriages();
+  Serial.print("...Carriages homed...");
+  homeVisor();
+  Serial.println("Visor homed...");
+
+  // set the track motors' settings after being homed...
+  Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
+  Track_Stepper_Left.setMaxSpeed(MAX_SPEED);
+  Track_Stepper_Right.setAcceleration(MOTOR_ACCEL);
+  Track_Stepper_Left.setAcceleration(MOTOR_ACCEL);
+
+  Serial.println("Welcome to the SSV. Open the SSV app to pair over Bluetooth.");
+  Serial.println("Initializing in Auto Mode...");
+  Serial.print("Horizontal Range = "); Serial.print(horizontalRange);
+  Serial.println("%");
+  Serial.print("Visor Height = "); Serial.print(Visor_Stepper.currentPosition());
+  Serial.println(" inches from the bottom of the enclosure.");
+}
+
+void loop() {
+  testing();
+  float azimuth = getAzimuth();
+  int steps = mapAzimuth(azimuth);
+  horizontalMove(steps);
+  recvWithEndMarker();
+  convertAppSettings();
+  visorMovement(calculateAltitude());
+}
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^SETUP AND LOOP^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+////////////////////////////FOR TESTING PURPOSES//////////////////////////////
+void testing() {
+  if (Serial.available()) {
+    // check if an azimuth value has been sent, and if so, make sure it is between 0 and
+    // 360 degrees inclusive, and if so, set that as the new azimuth, and proceed.
+    // replace Serial.peek() with getAzimuth() later.
+    int pendingData = Serial.peek();
+    // if 'd'
+    if (pendingData == 100) {
+      Visor_Stepper.disableOutputs();
+      Serial.read();
+    }
+    // if 'e'
+    else if (pendingData == 101) {
+      Visor_Stepper.enableOutputs();
+      Serial.read();
+      homeVisor();
+    }
+    else if (pendingData == 102) {
+      Track_Stepper_Right.disableOutputs();
+      Track_Stepper_Left.disableOutputs();
+      Serial.read();
+    }
+    else if (pendingData == 103) {
+      Track_Stepper_Right.enableOutputs();
+      Track_Stepper_Left.enableOutputs();
+      Serial.read();
+    }
+  }
+}
+//^^^^^^^^^^^^^^^^^^^^^^^^^^FOR TESTING PURPOSES^^^^^^^^^^^^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////FOR HOMING/CORRECTING PURPOSES//////////////////////
+void homeCarriages() {
+  // read the value of the left limit switch, which will be HIGH unless the carriage hits it,
+  // so go left until it does hit it so it can home in.
+  delay(100);
+
+  // set motor homing settings...
+  Track_Stepper_Right.move(-MAX_STEPS);
+  Track_Stepper_Left.move(-MAX_STEPS);
+  Track_Stepper_Right.setMaxSpeed(HOME_SPEED);
+  Track_Stepper_Left.setMaxSpeed(HOME_SPEED);
+  Track_Stepper_Right.setAcceleration(HOME_ACCEL);
+  Track_Stepper_Left.setAcceleration(HOME_ACCEL);
+
+  Serial.println();
+  Serial.println("Homing...");
+
+  while (LS1_Value) {
+    Track_Stepper_Left.run();
+    Track_Stepper_Right.run();
+    LS1_Value = digitalRead(LS1);
+  }
+
+  Track_Stepper_Left.move(5);
+  Track_Stepper_Right.move(5);
+  Serial.println("Correcting...");
+
+  while (!LS1_Value) {
+    Track_Stepper_Left.run();
+    Track_Stepper_Right.run();
+    LS1_Value = digitalRead(LS1);
+  }
+  // reset their home position here as zero.
+  Track_Stepper_Right.setCurrentPosition(0);
+  Track_Stepper_Left.setCurrentPosition(0);
+}
+
+void homeVisor() {
+  Visor_Stepper.enableOutputs();
+  Visor_Stepper.move(-442);
+  while (Visor_Stepper.currentPosition() != -442) {
+    Visor_Stepper.run();
+  }
+  Visor_Stepper.setCurrentPosition(0);
+}
+
+void readLimitSwitches() {
+  LS1_Value = digitalRead(LS1);
+  LS2_Value = digitalRead(LS2);
+}
+//^^^^^^^^^^^^^^^^^^^^^^^^FOR HOMING/CORRECTING PURPOSES^^^^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+///////////////////////FOR AZIMUTH CALC. AND TRACK MOVEMENT///////////////////
+float getAzimuth () {
+  
+  int one = 0;
+  int two = 0;
+  int three = 0;
+  int four = 0;
+  int five = 0;
+  int six = 0;
+  int seven = 0;
+  int eight = 0;
+  
+  for (int i = 0; i < AZIMUTH_SAMPLES; i++) {
+    // average readings from cells:
+    one += (analogRead(34) / AZIMUTH_SAMPLES);
+    two += (analogRead(35) / AZIMUTH_SAMPLES);
+    three += (analogRead(32) / AZIMUTH_SAMPLES);
+    four += (analogRead(33) / AZIMUTH_SAMPLES);
+    five += (analogRead(25) / AZIMUTH_SAMPLES);
+    six += (analogRead(26) / AZIMUTH_SAMPLES);
+    seven += (analogRead(14) / AZIMUTH_SAMPLES);
+    eight += (analogRead(27) / AZIMUTH_SAMPLES);
+    delay(50);
+  }
+
+  //add up the readings from the cells facing the same directions.
+  float north = (three + five) / 2.0; //0 degrees
+  float east = (one + seven) / 2.0;   //90 degrees
+  float south = ((four*0.8) + (six*0.5)) / 2.0;   //180 degrees
+  float west = (two + eight) / 2.0;   //270 degrees
+  float azimuthDegrees;
+
+  
+  if ((north > 0) || (east > 0) || (south > 0) || (west > 0)) {
+    // if there is a value from at least one direction:
+    if (north > south) {
+      // if the north value is greater than the south value:
+      if (east > west) {
+        // if the east value is greater than the west value:
+        if (north > east) {
+          // if the north value is greater than the east value:
+          if (north > (1.5 * east)) {
+            // if the north value is greater than 1.5x the east value,
+            // the azimuth is mostly north, with a small pull to the east, and an even
+            // smaller pull to the west.
+            azimuthDegrees = 0 + (((east) / north) * 45.0) - (((west) / north) * 45.0);
+            Serial.println("Northeast, north > 1.5 * east.");
+          }
+          else {
+            // else the north value is greater than east but less than 1.5x the east value,
+            // the azimuth is still mostly north, but with a larger pull to the east
+            // and west this time.
+            azimuthDegrees = 0 + (((east*1.5) / north) * 45.0) - ((west / north) * 45.0);
+            Serial.println("Northeast, north > east.");
+          }
+        }
+        else {
+          // else, the east value is greater than the north value:
+          if (east > (1.5 * north)) {
+            // if the east value is more than 1.5x the north value,
+            // the azimuth is mostly east, with a small pull to the north, and an even smaller
+            // pull to the south.
+            azimuthDegrees = 90.0 - (((north) / east) * 45.0) + (((south) / east) * 45.0);
+            Serial.println("Northeast, east > 1.5 * north.");
+          }
+          else {
+            // else the east value is greater than north but less than 1.5x the north value,
+            // the azimuth is still mostly east, but with a larger pull to the north and 
+            // south this time.
+            azimuthDegrees = 90.0 - (((north*1.5)/ east) * 45.0) + ((south / east) * 45.0);
+            Serial.println("Northeast, east > north.");
+          }
+        }
+      }
+      else {
+        // else, the west value is greater than the east value:
+        if (north > west) {
+          // if the north value is greater than the west value:
+          if (north > (1.25*west)) {
+            // if the north value is greater than 1.5x the west value,
+            // the azimuth is mostly north, with a small pull to the west, and an even smaller
+            // pull to the east.
+            azimuthDegrees = 360.0 - (((west)/ north) * 45.0) + (((east)/ north) * 45.0);
+            Serial.println("Northwest, north > 1.5 * west.");
+          }
+          else {
+            // else the north value is greater than the west but less than 1.5x the west value,
+            // the azimuth is still mostly north, but with a larger pull to the west and
+            // east this time.
+            azimuthDegrees = 360.0 - (((west*1.25) / north) * 45.0) + ((east / north) * 45.0);
+            Serial.println("Northwest, north > west.");
+          }
+        }
+        else {
+          // else, the west value is greater than the north value:
+          if (west > (1.5*north)) {
+            // if the west value is greater than 1.5x the north value,
+            // the azimuth is mostly west, with a small pull to the north, and an even smaller pull
+            // to the south.
+            azimuthDegrees = 270.0 + (((north)/ west) * 45.0) - (((south)/ west) * 45.0);
+            Serial.println("Northwest, west > 1.5 * north.");
+          }
+          else {
+            // else the west value is greater than the north but less than 1.5x the north value,
+            // the azimuth is still mostly west, but with a larger pull to the north and south
+            // this time.
+            azimuthDegrees = 270.0 + (((north*1.5)/ west) * 45.0) - ((south / west) * 45.0);
+            Serial.println("Northwest, west > north.");
+          }
+        }
+      }
+    }
+    else {
+      // else, the south value is greater than the north value:
+      if (east > west) {
+        // if the east value is greater than the west value:
+        if (south > east) {
+          // if the south value is greater than the east value:
+          if (south > (1.5*east)) {
+            // if the south value is greater than 1.5x the east value,
+            // the azimuth is mostly south, with a small pull to the east, and an even smaller
+            // pull to the west.
+            azimuthDegrees = 180.0 - (((east)/ south) * 45.0) + (((west)/ south) * 45.0);
+            Serial.println("Southeast, south > 1.5 * east.");
+          }
+          else {
+            // else the south value is greater than the east but less than 1.5x the east value,
+            // the azimuth is still mostly south, but with a larger pull to the east and west this time.
+            azimuthDegrees = 180.0 - (((east*1.25) / south) * 45.0) + ((west / south) * 45.0);
+            Serial.println("Southeast, south > east.");
+          }
+        }
+        else {
+          // else, the east value is greater than the south value:
+          if (east > (1.5*south)) {
+            // if the east value is greater than 1.5x the south value,
+            // the azimuth is mostly east, with a small pull to the south, and an even smaller pull to
+            // the north.
+            azimuthDegrees = 90.0 + (((south)/ east) * 45.0) - (((north)/ east) * 45.0);
+            Serial.println("Southeast, east > 1.5 * south.");
+          }
+          else {
+            // else the east value is greater than the south value but less than 1.5x the south value,
+            // the azimuth is mostly east, but with a larger pull to the south and north this time.
+            azimuthDegrees = 90.0 + (((south*1.5) / east) * 45.0) - ((north / east) * 45.0);
+            Serial.println("Southeast, east > south.");
+          }
+        }
+      }
+      else {
+        // else the west value is greater than the east value:
+        if (south > west) {
+          // if the south value is greater than the west value:
+          if (south > (1.5*west)) {
+            // if the south value is greater than 1.5x the west value,
+            // the azimuth is mostly south, with a small pull to the west, and an even smaller
+            // pull to the east.
+            azimuthDegrees = 180.0 + (((west)/ south) * 45.0) - (((east)/ south) * 45.0);
+            Serial.println("Southwest, south > 1.5 * west.");
+          }
+          else {
+            // else the south value is greater than the west value but less than 1.5x the west value,
+            // the azimuth is still mostly south, but with a larger pull to the west and east this time.
+            azimuthDegrees = 180.0 + (((west*1.5) / south) * 45.0) - ((east / south) * 45.0);
+            Serial.println("Southwest, south > west.");
+          }
+        }
+        else {
+          // else the west value is greater than the south value:
+          if (west > (1.5*south)) {
+            // if the west value is greater than 1.5x the south value,
+            // the azimuth is mostly west, with a small pull to the south, and an even smaller pull 
+            // to the north.
+            azimuthDegrees = 270.0 - (((south*1.25)/ west) * 45.0) + (((north)/ west) * 45.0);
+            Serial.println("Southwest, west > 1.5 * south.");
+          }
+          else {
+            // else the west value is greater than the south value, but less than 1.5x the south value,
+            // the azimuth is still mostly west, but with a larger pull to the south and north this time.
+            azimuthDegrees = 270.0 - (((south*1.5) / west) * 45.0) + ((north / west) * 45.0);
+            Serial.println("Southwest, west > south.");
+          }
+        }
+      }
+    }
+    Serial.print("Azimuth = "); Serial.println(azimuthDegrees);
+    Serial.print("One = "); Serial.print(one); Serial.print(", "); Serial.print("Two = ");
+    Serial.print(two); Serial.print(", "); Serial.print("Three = "); Serial.print(three);
+    Serial.print(", "); Serial.print("Four = "); Serial.print(four); Serial.println(", "); Serial.print("Five = "); 
+    Serial.print(five); Serial.print(", "); Serial.print("Six = "); Serial.print(six); Serial.print(", "); Serial.print("Seven = "); 
+    Serial.print(seven); Serial.print(", "); Serial.print("Eight = "); Serial.println(eight);
+    
+    Serial.print("North = "); Serial.print(north); Serial.print(", "); Serial.print("East = ");
+    Serial.print(east); Serial.print(", "); Serial.print("South = "); Serial.print(south);
+    Serial.print(", "); Serial.print("West = "); Serial.println(west);
+    Serial.println();
+    return azimuthDegrees;
+  }
+  else {
+    Serial.print("North = "); Serial.print(north); Serial.print(", "); Serial.print("East = ");
+    Serial.print(east); Serial.print(", "); Serial.print("South = "); Serial.print(south);
+    Serial.print(", "); Serial.print("West = "); Serial.println(west);
+    Serial.println("Is the sensor apparatus connected?");
+    Serial.println();
+    return 500;
+  }
+}
+
+
+int mapAzimuth(int newAzimuth) {
+  int newPos;
+  if ((newAzimuth >= 0) && (newAzimuth <= 45)) {
+    newPos = map(newAzimuth, 0, 45, STEPS_TO_ZERO_DEGREES * (horizontalRange / 100), MAX_STEPS * (horizontalRange / 100));
+    //Serial.print("New position = ");
+    //Serial.println(newPos);
+  }
+  else if ((newAzimuth >= 225) && (newAzimuth <= 360)) {
+    newPos = map(newAzimuth, 225, 360, 0, STEPS_TO_ZERO_DEGREES * (horizontalRange / 100));
+    //Serial.print("New position = ");
+    //Serial.println(newPos);
+  }
+  else if ((newAzimuth > 45) && (newAzimuth <= 90)) {
+    newPos = MAX_STEPS * (horizontalRange / 100);
+    //Serial.print("New position = ");
+    //Serial.println(newPos);
+  }
+  else if ((newAzimuth > 180) && (newAzimuth < 225)) {
+    newPos = 0;
+    //Serial.print("New position = ");
+    //Serial.println(newPos);
+  }
+  else {
+    //Serial.println("Azimuth OOR");
+    newPos = Track_Stepper_Right.currentPosition();
+  }
+  return newPos;
+}
+
+
+// work in progress
+void horizontalMove(int newPosition) {
+  // need to change boundaries based on what direction it needs to go.
+  int rightBoundary;
+  int leftBoundary;
+  int difference = newPosition - Track_Stepper_Right.currentPosition();
+  
+  if ((abs(difference) > CHANGE_THRESHOLD) && ((millis() - lastMillis) >= HORIZONTAL_MOVE_DELAY)) {
+
+    Visor_Stepper.enableOutputs();
+    Visor_Stepper.runToNewPosition(0);
+    Serial.print("New position = "); Serial.println(newPosition);
+    Serial.print("Difference = "); Serial.println(difference);
+    
+    // right:
+    if (difference > 0) {
+      rightBoundary = RIGHT_BOUNDARY_FOR;
+      leftBoundary = LEFT_BOUNDARY_FOR;
+      Track_Stepper_Right.moveTo(newPosition);
+      Track_Stepper_Left.moveTo(newPosition);
+    }
+    // left:
+    else if (difference < 0) {
+      rightBoundary = RIGHT_BOUNDARY_REV;
+      leftBoundary = LEFT_BOUNDARY_REV;
+      Track_Stepper_Right.moveTo(newPosition);
+      Track_Stepper_Left.moveTo(newPosition);
+    }
+
+    readLimitSwitches();
+
+    // if both switches aren't hit, the steppers are not at their target positions,
+    // and the absolute value of the difference is greater than the threshold value
+    while ((LS1_Value && LS2_Value)
+           && (Track_Stepper_Left.distanceToGo() != 0)
+           && (Track_Stepper_Right.distanceToGo() != 0)) {
+
+      if (Track_Stepper_Right.currentPosition() < leftBoundary) {
+        Track_Stepper_Right.enableOutputs();
+        Track_Stepper_Left.enableOutputs();
+        Visor_Stepper.enableOutputs();
+        Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
+        Track_Stepper_Left.setMaxSpeed(MAX_SPEED);
+        Serial.println("Step 1...");
+      }
+
+      while ((Track_Stepper_Right.currentPosition() < leftBoundary)
+             && (Track_Stepper_Left.distanceToGo() != 0)) {
+        Track_Stepper_Right.run();
+        Track_Stepper_Left.run();
+      }
+
+      // when going around the curve, change the max speed to a low speed to
+      // avoid belt slipping when going right, move the visor up to zero position,
+      // and disable the visor motor.
+      if ((Track_Stepper_Right.currentPosition() >= leftBoundary)
+          && (Track_Stepper_Right.currentPosition() <= rightBoundary)) {
+
+        if (difference < 0) {
+          Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
+          Track_Stepper_Left.setMaxSpeed(MAX_SPEED);
+        }
+        else if (difference > 0) {
+          Track_Stepper_Right.setMaxSpeed(CURVE_SPEED);
+          Track_Stepper_Left.setMaxSpeed(CURVE_SPEED);
+        }
+        Track_Stepper_Right.enableOutputs();
+        Track_Stepper_Left.disableOutputs();
+        Visor_Stepper.disableOutputs();
+        Serial.println("Step 2...");
+      }
+
+      while ((Track_Stepper_Right.currentPosition() >= leftBoundary)
+             && (Track_Stepper_Right.currentPosition() <= rightBoundary)
+             && (Track_Stepper_Right.distanceToGo() != 0)) {
+        Track_Stepper_Right.run();
+        Track_Stepper_Left.run();
+      }
+
+      if ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV_2)
+          && (difference < 0)) {
+        Track_Stepper_Right.enableOutputs();
+        Track_Stepper_Left.disableOutputs();
+        Visor_Stepper.enableOutputs();
+        Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
+        Track_Stepper_Left.setMaxSpeed(MAX_SPEED);
+        Serial.println("Step 3...");
+      }
+
+      while ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV_2)
+             && (difference < 0) && (Track_Stepper_Right.distanceToGo() != 0)) {
+        Track_Stepper_Right.run();
+        Track_Stepper_Left.run();
+      }
+
+      if (Track_Stepper_Right.currentPosition() > rightBoundary) {
+        Track_Stepper_Right.disableOutputs();
+        Track_Stepper_Left.enableOutputs();
+        Visor_Stepper.enableOutputs();
+        Track_Stepper_Right.setMaxSpeed(MAX_SPEED);
+        Track_Stepper_Left.setMaxSpeed(MAX_SPEED);
+        Serial.println("Step 4...");
+      }
+
+      while ((Track_Stepper_Right.currentPosition() > rightBoundary)
+             && (Track_Stepper_Left.distanceToGo() != 0)) {
+        Track_Stepper_Right.run();
+        Track_Stepper_Left.run();
+      }
+      //check the switches...
+      readLimitSwitches();
+    }
+    // print the final position...
+    Serial.print("Current position final (left, right) = ");
+    Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
+    Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+    lastHorizontalMoveTime = millis();
+  }
+
+
+  // if the left switch is hit, move right a little, and set the current position
+  // as the new zero position.
+  if (!LS1_Value) {
+    Serial.println("Left Switch Hit!");
+    Track_Stepper_Right.disableOutputs();
+    Track_Stepper_Left.enableOutputs();
+    Track_Stepper_Left.move(5);
+    Track_Stepper_Left.runToPosition();
+    Track_Stepper_Right.setCurrentPosition(0);
+    Track_Stepper_Left.setCurrentPosition(0);
+    // print the final position...
+    Serial.print("Current position final (left, right) = ");
+    Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
+    Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+  }
+
+  // if the right switch is hit, move left a little, and set the current position
+  // as the new max position.
+  else if (!LS2_Value) {
+    Serial.println("Right Switch Hit!");
+    Track_Stepper_Right.enableOutputs();
+    Track_Stepper_Left.disableOutputs();
+    Track_Stepper_Right.move(-5);
+    Track_Stepper_Right.runToPosition();
+    Track_Stepper_Right.setCurrentPosition(MAX_STEPS);
+    Track_Stepper_Left.setCurrentPosition(MAX_STEPS);
+    // print the final position...
+    Serial.print("Current position final (left, right) = ");
+    Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
+    Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+  }
+  //check the switches...
+  readLimitSwitches();
+}
+//^^^^^^^^^^^^^^^^^^^^^FOR AZIMUTH CALC. AND TRACK MOVEMENT^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+///////////////////////FOR READING AND DECODING APP DATA//////////////////////
+void recvWithEndMarker() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+  if (SerialBT.available() > 0) {
+    rc = SerialBT.read();
+    if (rc != endMarker) {
+      receivedChars[ndx] = rc;
+      ndx++;
+      if (ndx >= numChars) {
+        ndx = numChars - 1;
+      }
+    }
+    else {
+      receivedChars[ndx] = '\0'; // terminate the string
+      for (int i = 0; i < ndx; i++) {
+        Serial.print(receivedChars[i]);
+      }
+      Serial.println();
+      numberOfBytes = ndx;
+      ndx = 0;
+      newData = true;
+    }
+  }
+}
+
+
+void convertAppSettings() {
+  int Day = 0;
+  int Month = 0;
+  int Year = 0;
+  int Hour = 0;
+  int Minute = 0;
+  int Second = 0;
+
+  if (newData == true) {
+    Serial.print("Size of data in bytes: "); Serial.println(numberOfBytes);
+    if (numberOfBytes == 8) {
+      if ((receivedChars[1] == '.') || (receivedChars[2] == '.') || (receivedChars[3] == '.')) {
+        Serial.println("Latitude incoming...");
+        for (int i = 0; i < numberOfBytes; i++) {
+          switch (i) {
+            case 0:
+              // (x).xxxxxx
+              if (receivedChars[1] == '.') {
+                latitude = float(receivedChars[i] - '0');
+              }
+              // (x)x.xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude = float(receivedChars[i] - '0') * 10.0;
+              }
+              break;
+            case 1:
+              // x(.)xxxxxx
+              if (receivedChars[1] == '.') {
+                break;
+              }
+              // x(x).xxxxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0');
+              }
+              break;
+            case 2:
+              // x.(x)xxxxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              // xx(.)xxxxx
+              else if (receivedChars[2] == '.') {
+                break;
+              }
+              break;
+            case 3:
+              // x.x(x)xxxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              // xx.(x)xxxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              break;
+            case 4:
+              // x.xx(x)xxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              // xx.x(x)xxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              break;
+            case 5:
+              // x.xxx(x)xx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              // xx.xx(x)xx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              break;
+            case 6:
+              // x.xxxx(x)x
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100000.0;
+              }
+              // xx.xxx(x)x
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              break;
+            case 7:
+              // x.xxxxx(x)
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000000.0;
+              }
+              // xx.xxxx(x)
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100000.0;
+              }
+              break;
+          }
+        }
+        Serial.print("Latitude (degrees): ");
+        Serial.println(latitude);
+      }
+      else {
+        Serial.println("Date incoming...");
+        for (int i = 0; i < 8; i++) {
+          // change the character element into an integer and place it into the respective place:
+          switch (i) {
+            case 0:
+              Day = (receivedChars[i] - '0') * 10;
+              break;
+            case 1:
+              Day += (receivedChars[i] - '0');
+              break;
+            case 2:
+              Month = (receivedChars[i] - '0') * 10;
+              break;
+            case 3:
+              Month += (receivedChars[i] - '0');
+              break;
+            case 4:
+              Year = (receivedChars[i] - '0') * 1000;
+              break;
+            case 5:
+              Year += (receivedChars[i] - '0') * 100;
+              break;
+            case 6:
+              Year += (receivedChars[i] - '0') * 10;
+              break;
+            case 7:
+              Year += (receivedChars[i] - '0');
+              break;
+          }
+        }
+
+        Serial.print(Day); Serial.print("/"); Serial.print(Month); Serial.print("/"); Serial.println(Year);
+
+        // calculate the number of days since Jan 1st UTC based on the month and days
+        switch (Month) {
+          case 1:
+            daysSinceJan1st = Day - 1;
+            break;
+          case 2:
+            daysSinceJan1st = JANUARY + Day - 1;
+            break;
+          case 3:
+            daysSinceJan1st = JANUARY + FEBRUARY + Day - 1;
+            break;
+          case 4:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + Day - 1;
+            break;
+          case 5:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + Day - 1;
+            break;
+          case 6:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + Day - 1;
+            break;
+          case 7:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + Day - 1;
+            break;
+          case 8:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + JULY + Day - 1;
+            break;
+          case 9:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + JULY + AUGUST + Day - 1;
+            break;
+          case 10:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + JULY + AUGUST + SEPTEMBER + Day - 1;
+            break;
+          case 11:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + JULY + AUGUST + SEPTEMBER + OCTOBER + Day - 1;
+            break;
+          case 12:
+            daysSinceJan1st = JANUARY + FEBRUARY + MARCH + APRIL + MAY + JUNE + JULY + AUGUST + SEPTEMBER + OCTOBER + NOVEMBER + Day - 1;
+            break;
+        }
+        Serial.print("Days since Jan 1st: ");
+        Serial.println(daysSinceJan1st);
+      }
+    }
+    // if the size of the packet is seven bytes, and there is a decimal:
+    else if (numberOfBytes == 7) {
+      if ((receivedChars[1] == '.') || (receivedChars[2] == '.')
+          || (receivedChars[3] == '.')) {
+
+        Serial.println("Latitude incoming...");
+        // go through each element and convert the array into a float
+        for (int i = 0; i < numberOfBytes; i++) {
+          switch (i) {
+            case 0:
+              // (x).xxxxx
+              if (receivedChars[1] == '.') {
+                latitude = float(receivedChars[i] - '0');
+              }
+              // (x)x.xxxx
+              else if (receivedChars[2] == '.') {
+                latitude = float(receivedChars[i] - '0') * 10.0;
+              }
+              break;
+            case 1:
+              // x(.)xxxxx
+              if (receivedChars[1] == '.') {
+                break;
+              }
+              // x(x).xxxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0');
+              }
+              break;
+            case 2:
+              // x.(x)xxxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              // xx(.)xxxx
+              else if (receivedChars[2] == '.') {
+                break;
+              }
+              break;
+            case 3:
+              // x.x(x)xxx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              // xx.(x)xxx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10.0;
+              }
+              break;
+            case 4:
+              // x.xx(x)xx
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              // xx.x(x)xx
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100.0;
+              }
+              break;
+            case 5:
+              // x.xxx(x)x
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              // xx.xx(x)x
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 1000.0;
+              }
+              break;
+            case 6:
+              // x.xxxx(x)
+              if (receivedChars[1] == '.') {
+                latitude += float(receivedChars[i] - '0') / 100000.0;
+              }
+              // xx.xxx(x)
+              else if (receivedChars[2] == '.') {
+                latitude += float(receivedChars[i] - '0') / 10000.0;
+              }
+              break;
+          }
+        }
+        Serial.print("Latitude (degrees): ");
+        Serial.println(latitude);
+      }
+    }
+
+    // if the size of the character array is six bytes, then it is HHMMSS
+    else if (numberOfBytes == 6) {
+      Serial.println("Time incoming...");
+      for (int i = 0; i < 6; i++) {
+        switch (i) {
+          case 0:
+            Hour = (receivedChars[i] - '0') * 10;
+            break;
+          case 1:
+            Hour += (receivedChars[i] - '0');
+            break;
+          case 2:
+            Minute = (receivedChars[i] - '0') * 10;
+            break;
+          case 3:
+            Minute += (receivedChars[i] - '0');
+            break;
+          case 4:
+            Second = (receivedChars[i] - '0') * 10;
+            break;
+          case 5:
+            Second += (receivedChars[i] - '0');
+            break;
+        }
+      }
+      Serial.print(Hour); Serial.print(":"); Serial.print(Minute); Serial.print(":"); Serial.println(Second);
+      // calculate the LST for use in the solar hour angle formula:
+      localSolarTime = float(Hour) + (float(Minute) / 60.0);
+    }
+
+    // else a manual mode/auto mode, manual height, or horizontal range packet was sent.
+    else {
+      switch (receivedChars[0]) {
+        case '0':
+          if (manualMode == 1) {
+            manualHeight = 0;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '1':
+          if (receivedChars[1] == '0') {
+            if (receivedChars[2] == '0') {
+              horizontalRange = 100;
+              Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+            }
+          }
+          else if (manualMode == 1) {
+            manualHeight = 1;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '2':
+          if (manualMode == 1) {
+            manualHeight = 2;
+          }
+          break;
+        case '3':
+          if (manualMode == 1) {
+            manualHeight = 3;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '4':
+          if (manualMode == 1) {
+            manualHeight = 4;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '5':
+          if (receivedChars[1] == '0') {
+            horizontalRange = 50;
+            Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          }
+          else if (manualMode == 1) {
+            manualHeight = 5;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '6':
+          if (receivedChars[1] == '0') {
+            horizontalRange = 60;
+            Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          }
+          else if (manualMode == 1) {
+            manualHeight = 6;
+            Serial.print("Manual Height = "); Serial.println(manualHeight);
+          }
+          break;
+        case '7':
+          if (receivedChars[1] == '0') {
+            horizontalRange = 70;
+            Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          }
+          else {
+            autoMode = 1;
+            manualMode = 0;
+            Serial.println("Auto Height Mode Activated");
+          }
+          break;
+        case '8':
+          if (receivedChars[1] == '0') {
+            horizontalRange = 80;
+            Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          }
+          else {
+            autoMode = 0;
+            manualMode = 1;
+            Serial.println("Manual Height Mode Activated");
+          }
+          break;
+        case '9':
+          horizontalRange = 90;
+          Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
+          break;
+      }
+    }
+    // if the new max steps boundary is less than the current position of the track steppers,
+    // then move the steppers to that new boundary.
+    //if ((MAX_STEPS * (horizontalRange / 100)) < Track_Stepper_Right.currentPosition()) {
+    //  horizontalMove(MAX_STEPS * (horizontalRange / 100));
+    //}
+    // set the new data boolean to false before exiting
+    newData = false;
+  }
+}
+//^^^^^^^^^^^^^^^^^^^^^FOR READING AND DECODING APP DATA^^^^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+/////////////////////FOR ALTITUDE CALC. AND VISOR MOVEMENT////////////////////
+int calculateAltitude() {
+  // if there was latitude data and auto mode is on:
+  if ((latitude > 0) && (daysSinceJan1st > 0) && (localSolarTime > 0) && (autoMode == 1)) {
+    // if the delay is over:
+    if ((millis() - lastMillis) >= ALTITUDE_CALC_DELAY) {
+
+      // first, find the declination angle of the sun:
+      // https://solarsena.com/solar-declination-angle-calculator/
+      float declinationAngle = asin(sin(-23.44 * PI / 180.0) * cos((360.0 / 365.0) * (float(daysSinceJan1st) + 10.0) * (PI / 180.0)));
+      Serial.print("Declination angle (radians, degrees): "); Serial.print(declinationAngle);
+      Serial.print(", "); Serial.println(declinationAngle * 180 / PI);
+
+      // then, find the maximum altitude for the day:
+      // https://sciencing.com/calculate-suns-altitude-8556649.html
+      maxAltitude = 90.0 - latitude + (declinationAngle * 180.0 / PI);
+      Serial.print("Maximum altitude for the day (degrees): "); Serial.println(maxAltitude);
+
+      // then, find the solar hour angle:
+      // https://solarsena.com/solar-hour-angle-calculator-formula/
+      float solarHourAngle = (15.0 * (localSolarTime - 12.0)) * (PI / 180.0);
+      Serial.print("Solar hour angle (radians, degrees): "); Serial.print(solarHourAngle);
+      Serial.print(", "); Serial.println(solarHourAngle * 180 / PI);
+
+      // finally, we can find the altitude of the sun:
+      // https://solarsena.com/solar-elevation-angle-altitude/
+      float altitude = (asin(sin(latitude * PI / 180) * sin(declinationAngle) + cos(latitude * PI / 180) * cos(declinationAngle) * cos(solarHourAngle))) * (180.0 / PI);
+      Serial.print("Altitude (degrees): "); Serial.println(altitude);
+
+      // get ready for next iteration and return the new altitude:
+      lastMillis = millis();
+      return altitude;
+    }
+    else {
+      return 0;
+    }
+  }
+  else {
+    return 0;
+  }
+}
+
+void visorMovement(int altitude) {
+  // if manual mode is activated:
+  if ((manualMode == 1) && (Visor_Stepper.currentPosition() != (manualHeight * INCH_STEPS))) {
+    Visor_Stepper.runToNewPosition(manualHeight * INCH_STEPS);
+    Serial.print("Visor Height: "); Serial.print(Visor_Stepper.currentPosition() / INCH_STEPS);
+    Serial.println(" inches.");
+  }
+  // OR if auto mode is activated and altitude is greater than zero:
+  else if (autoMode == 1) {
+    if (altitude > 0) {
+      // map the altitude from (0-max altitude) to (0-max steps):
+      int nextPos = map(altitude, 0, maxAltitude, 0, (6 * INCH_STEPS));
+      // **altitude and nextPos are indirectly proportional**
+      nextPos = (6 * INCH_STEPS) - nextPos;
+      Serial.print("Visor Height: "); Serial.print(float(nextPos) / float(INCH_STEPS)); Serial.println(" inches.");
+      // move the visor to the next position:
+      Visor_Stepper.runToNewPosition(nextPos);
+    }
+    else {
+      return;
+    }
+  }
+}
+//^^^^^^^^^^^^^^^^^^^FOR ALTITUDE CALC. AND VISOR MOVEMENT^^^^^^^^^^^^^^^^^^//
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
