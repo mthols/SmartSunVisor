@@ -78,15 +78,15 @@ unsigned long lastHorizontalMoveTime;
 #define ALTITUDE_CALC_DELAY 10000
 unsigned long lastMillis = -ALTITUDE_CALC_DELAY;
 int maxAltitude = 0;
-int daysSinceJan1st = 117;  // normally 0, set for testing
-float localSolarTime = 17;  // normally 0.0, set for testing
+int daysSinceJan1st = 122;  // normally 0, set for testing
+float localSolarTime = 15;  // normally 0.0, set for testing
 float latitude = 37.38694;  // normally 0.0, set for testing
 
 // globals for app:
 int autoMode = 1;
 int manualMode = 0;
 int manualHeight = 0;
-int horizontalRange = 100;
+int horizontalRange = 70;
 const byte numChars = 32;
 char receivedChars[numChars];
 boolean newData = false;
@@ -449,26 +449,17 @@ int mapAzimuth(int newAzimuth) {
   int newPos;
   if ((newAzimuth >= 0) && (newAzimuth <= 45)) {
     newPos = map(newAzimuth, 0, 45, (STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0)), (MAX_STEPS * (horizontalRange / 100.0)));
-    //Serial.print("New position = ");
-    //Serial.println(newPos);
   }
   else if ((newAzimuth >= 225) && (newAzimuth <= 360)) {
     newPos = map(newAzimuth, 225, 360, 0, (STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0)));
-    //Serial.print("New position = ");
-    //Serial.println(newPos);
   }
   else if ((newAzimuth > 45) && (newAzimuth <= 90)) {
     newPos = MAX_STEPS * (horizontalRange / 100);
-    //Serial.print("New position = ");
-    //Serial.println(newPos);
   }
   else if ((newAzimuth > 180) && (newAzimuth < 225)) {
     newPos = 0;
-    //Serial.print("New position = ");
-    //Serial.println(newPos);
   }
   else {
-    //Serial.println("Azimuth OOR");
     newPos = Track_Stepper_Right.currentPosition();
   }
   return newPos;
@@ -520,7 +511,8 @@ void horizontalMove(int newPosition) {
       }
 
       while ((Track_Stepper_Right.currentPosition() < leftBoundary)
-             && (Track_Stepper_Left.distanceToGo() != 0)) {
+             && (Track_Stepper_Left.distanceToGo() != 0)
+             && (Track_Stepper_Right.distanceToGo() != 0)) {
         Track_Stepper_Right.run();
         Track_Stepper_Left.run();
       }
@@ -547,7 +539,8 @@ void horizontalMove(int newPosition) {
 
       while ((Track_Stepper_Right.currentPosition() >= leftBoundary)
              && (Track_Stepper_Right.currentPosition() <= rightBoundary)
-             && (Track_Stepper_Right.distanceToGo() != 0)) {
+             && (Track_Stepper_Right.distanceToGo() != 0)
+             && (Track_Stepper_Left.distanceToGo() != 0)) {
         Track_Stepper_Right.run();
         Track_Stepper_Left.run();
       }
@@ -563,7 +556,8 @@ void horizontalMove(int newPosition) {
       }
 
       while ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV_2)
-             && (difference < 0) && (Track_Stepper_Right.distanceToGo() != 0)) {
+             && (difference < 0) && (Track_Stepper_Right.distanceToGo() != 0)
+             && (Track_Stepper_Left.distanceToGo() != 0)) {
         Track_Stepper_Right.run();
         Track_Stepper_Left.run();
       }
@@ -578,7 +572,8 @@ void horizontalMove(int newPosition) {
       }
 
       while ((Track_Stepper_Right.currentPosition() > rightBoundary)
-             && (Track_Stepper_Left.distanceToGo() != 0)) {
+             && (Track_Stepper_Left.distanceToGo() != 0) 
+             && (Track_Stepper_Right.distanceToGo() != 0)) {
         Track_Stepper_Right.run();
         Track_Stepper_Left.run();
       }
@@ -589,6 +584,7 @@ void horizontalMove(int newPosition) {
     Serial.print("Current position final (left, right) = ");
     Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
     Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+    Serial.println();
     lastHorizontalMoveTime = millis();
   }
   // turn off the track motors when not moving.
@@ -611,7 +607,8 @@ void horizontalMove(int newPosition) {
     // print the final position...
     Serial.print("Current position final (left, right) = ");
     Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
-    Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+    Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left.");
+    Serial.println();
   }
 
   // if the right switch is hit, move left a little, and set the current position
@@ -628,6 +625,7 @@ void horizontalMove(int newPosition) {
     Serial.print("Current position final (left, right) = ");
     Serial.print(Track_Stepper_Left.currentPosition()); Serial.print(", ");
     Serial.print(Track_Stepper_Right.currentPosition()); Serial.println(" steps from left");
+    Serial.println();
   }
   //check the switches...
   readLimitSwitches();
@@ -1064,9 +1062,9 @@ void convertAppSettings() {
   }
 }
 //^^^^^^^^^^^^^^^^^^^^^FOR READING AND DECODING APP DATA^^^^^^^^^^^^^^^^^^^^//
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-/////////////////////FOR ALTITUDE CALC. AND VISOR MOVEMENT////////////////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+//▼▼▼▼▼▼▼▼▼▼FOR ALTITUDE CALC. AND VISOR MOVEMENT▼▼▼▼▼▼▼▼▼▼//
 int calculateAltitude() {
   // if there was latitude data and auto mode is on:
   if ((latitude > 0) && (daysSinceJan1st > 0) && (localSolarTime > 0) && (autoMode == 1)) {
@@ -1123,7 +1121,8 @@ void visorMovement(int altitude) {
       // **altitude and nextPos are indirectly proportional**
       nextPos = (6 * INCH_STEPS) - nextPos;
       Serial.print("Visor Height: "); Serial.print(float(nextPos) / float(INCH_STEPS)); Serial.println(" inches.");
-
+      Serial.println();
+      
 ////////////////////////////////////////////////////////////////
       // currently under testing
       // insert code to move carriages to a position that will allow 
@@ -1147,6 +1146,6 @@ void visorMovement(int altitude) {
     }
   }
 }
-//^^^^^^^^^^^^^^^^^^^FOR ALTITUDE CALC. AND VISOR MOVEMENT^^^^^^^^^^^^^^^^^^//
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
+//▲▲▲▲▲▲▲▲▲▲FOR ALTITUDE CALC. AND VISOR MOVEMENT▲▲▲▲▲▲▲▲▲▲//
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
