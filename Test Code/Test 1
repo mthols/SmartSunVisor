@@ -134,7 +134,7 @@ float getAzimuth () {
             // else the north value is greater than east but less than 1.5x the east value,
             // the azimuth is still mostly north, but with a larger pull to the east
             // and west this time.
-            azimuthDegrees = 0 + (((east*1.5) / north) * 45.0) - ((west / north) * 45.0);
+            azimuthDegrees = 0 + (((east*1.25) / north) * 45.0) - (((west*0.75) / north) * 45.0);
             Serial.println("Northeast, north > east.");
           }
         }
@@ -151,7 +151,7 @@ float getAzimuth () {
             // else the east value is greater than north but less than 1.5x the north value,
             // the azimuth is still mostly east, but with a larger pull to the north and 
             // south this time.
-            azimuthDegrees = 90.0 - (((north*1.5)/ east) * 45.0) + ((south / east) * 45.0);
+            azimuthDegrees = 90.0 - (((north*1.25)/ east) * 45.0) + (((south*0.75) / east) * 45.0);
             Serial.println("Northeast, east > north.");
           }
         }
@@ -171,7 +171,7 @@ float getAzimuth () {
             // else the north value is greater than the west but less than 1.5x the west value,
             // the azimuth is still mostly north, but with a larger pull to the west and
             // east this time.
-            azimuthDegrees = 360.0 - (((west*1.25) / north) * 45.0) + ((east / north) * 45.0);
+            azimuthDegrees = 360.0 - (((west*1.1) / north) * 45.0) + (((east) / north) * 45.0);
             Serial.println("Northwest, north > west.");
           }
         }
@@ -188,7 +188,7 @@ float getAzimuth () {
             // else the west value is greater than the north but less than 1.5x the north value,
             // the azimuth is still mostly west, but with a larger pull to the north and south
             // this time.
-            azimuthDegrees = 270.0 + (((north*1.5)/ west) * 45.0) - ((south / west) * 45.0);
+            azimuthDegrees = 270.0 + (((north*1.25)/ west) * 45.0) - (((south*0.75) / west) * 45.0);
             Serial.println("Northwest, west > north.");
           }
         }
