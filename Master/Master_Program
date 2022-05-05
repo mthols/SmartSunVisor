@@ -78,15 +78,15 @@ unsigned long lastHorizontalMoveTime;
 #define ALTITUDE_CALC_DELAY 10000
 unsigned long lastMillis = -ALTITUDE_CALC_DELAY;
 int maxAltitude = 0;
-int daysSinceJan1st = 122;  // normally 0, set for testing
-float localSolarTime = 15;  // normally 0.0, set for testing
-float latitude = 37.38694;  // normally 0.0, set for testing
+int daysSinceJan1st = 0.0;  // normally 0, set for testing
+float localSolarTime = 0.0;  // normally 0.0, set for testing
+float latitude = 37.41088;  // normally 0.0, set for testing
 
 // globals for app:
 int autoMode = 1;
 int manualMode = 0;
 int manualHeight = 0;
-int horizontalRange = 70;
+int horizontalRange = 100;
 const byte numChars = 32;
 char receivedChars[numChars];
 boolean newData = false;
@@ -121,6 +121,7 @@ void setup() {
 
   homeCarriages();
   Serial.print("...Carriages homed...");
+  delay(250);
   homeVisor();
   Serial.println("Visor homed...");
 
@@ -139,7 +140,7 @@ void setup() {
 }
 
 void loop() {
-  testing();
+  //testing();
   recvWithEndMarker();
   convertAppSettings();
   float azimuth = getAzimuth();
@@ -153,9 +154,6 @@ void loop() {
 ////////////////////////////FOR TESTING PURPOSES//////////////////////////////
 void testing() {
   if (Serial.available()) {
-    // check if an azimuth value has been sent, and if so, make sure it is between 0 and
-    // 360 degrees inclusive, and if so, set that as the new azimuth, and proceed.
-    // replace Serial.peek() with getAzimuth() later.
     int pendingData = Serial.peek();
     // if 'd'
     if (pendingData == 100) {
@@ -168,11 +166,13 @@ void testing() {
       Serial.read();
       homeVisor();
     }
+    // if 'f'
     else if (pendingData == 102) {
       Track_Stepper_Right.disableOutputs();
       Track_Stepper_Left.disableOutputs();
       Serial.read();
     }
+    // if 'g'
     else if (pendingData == 103) {
       Track_Stepper_Right.enableOutputs();
       Track_Stepper_Left.enableOutputs();
@@ -222,10 +222,7 @@ void homeCarriages() {
 
 void homeVisor() {
   Visor_Stepper.enableOutputs();
-  Visor_Stepper.move(-442);
-  while (Visor_Stepper.currentPosition() != -442) {
-    Visor_Stepper.run();
-  }
+  Visor_Stepper.runToNewPosition(-442);
   Visor_Stepper.setCurrentPosition(0);
 }
 
@@ -258,190 +255,37 @@ float getAzimuth () {
     six += (analogRead(26) / AZIMUTH_SAMPLES);
     seven += (analogRead(14) / AZIMUTH_SAMPLES);
     eight += (analogRead(27) / AZIMUTH_SAMPLES);
-    delay(50);
+    delay(10);
   }
 
   //add up the readings from the cells facing the same directions.
   float north = (three + five) / 2.0; //0 degrees
   float east = (one + seven) / 2.0;   //90 degrees
-  float south = ((four*0.8) + (six*0.5)) / 2.0;   //180 degrees
+  float south = (four + six) / 2.0;   //180 degrees
   float west = (two + eight) / 2.0;   //270 degrees
-  float azimuthDegrees;
 
+  float y = north - south;
+  float x = east - west;
+  //Serial.print("x = "); Serial.println(x);
+  //Serial.print("y = "); Serial.println(y);
+
+  float azimuth = 0;
   
-  if ((north > 0) || (east > 0) || (south > 0) || (west > 0)) {
-    // if there is a value from at least one direction:
-    if (north > south) {
-      // if the north value is greater than the south value:
-      if (east > west) {
-        // if the east value is greater than the west value:
-        if (north > east) {
-          // if the north value is greater than the east value:
-          if (north > (1.5 * east)) {
-            // if the north value is greater than 1.5x the east value,
-            // the azimuth is mostly north, with a small pull to the east, and an even
-            // smaller pull to the west.
-            azimuthDegrees = 0 + (((east) / north) * 45.0) - (((west) / north) * 45.0);
-            Serial.println("Northeast, north > 1.5 * east.");
-          }
-          else {
-            // else the north value is greater than east but less than 1.5x the east value,
-            // the azimuth is still mostly north, but with a larger pull to the east
-            // and west this time.
-            azimuthDegrees = 0 + (((east*1.5) / north) * 45.0) - ((west / north) * 45.0);
-            Serial.println("Northeast, north > east.");
-          }
-        }
-        else {
-          // else, the east value is greater than the north value:
-          if (east > (1.5 * north)) {
-            // if the east value is more than 1.5x the north value,
-            // the azimuth is mostly east, with a small pull to the north, and an even smaller
-            // pull to the south.
-            azimuthDegrees = 90.0 - (((north) / east) * 45.0) + (((south) / east) * 45.0);
-            Serial.println("Northeast, east > 1.5 * north.");
-          }
-          else {
-            // else the east value is greater than north but less than 1.5x the north value,
-            // the azimuth is still mostly east, but with a larger pull to the north and 
-            // south this time.
-            azimuthDegrees = 90.0 - (((north*1.5)/ east) * 45.0) + ((south / east) * 45.0);
-            Serial.println("Northeast, east > north.");
-          }
-        }
-      }
-      else {
-        // else, the west value is greater than the east value:
-        if (north > west) {
-          // if the north value is greater than the west value:
-          if (north > (1.25*west)) {
-            // if the north value is greater than 1.5x the west value,
-            // the azimuth is mostly north, with a small pull to the west, and an even smaller
-            // pull to the east.
-            azimuthDegrees = 360.0 - (((west)/ north) * 45.0) + (((east)/ north) * 45.0);
-            Serial.println("Northwest, north > 1.5 * west.");
-          }
-          else {
-            // else the north value is greater than the west but less than 1.5x the west value,
-            // the azimuth is still mostly north, but with a larger pull to the west and
-            // east this time.
-            azimuthDegrees = 360.0 - (((west*1.25) / north) * 45.0) + ((east / north) * 45.0);
-            Serial.println("Northwest, north > west.");
-          }
-        }
-        else {
-          // else, the west value is greater than the north value:
-          if (west > (1.5*north)) {
-            // if the west value is greater than 1.5x the north value,
-            // the azimuth is mostly west, with a small pull to the north, and an even smaller pull
-            // to the south.
-            azimuthDegrees = 270.0 + (((north)/ west) * 45.0) - (((south)/ west) * 45.0);
-            Serial.println("Northwest, west > 1.5 * north.");
-          }
-          else {
-            // else the west value is greater than the north but less than 1.5x the north value,
-            // the azimuth is still mostly west, but with a larger pull to the north and south
-            // this time.
-            azimuthDegrees = 270.0 + (((north*1.5)/ west) * 45.0) - ((south / west) * 45.0);
-            Serial.println("Northwest, west > north.");
-          }
-        }
-      }
-    }
-    else {
-      // else, the south value is greater than the north value:
-      if (east > west) {
-        // if the east value is greater than the west value:
-        if (south > east) {
-          // if the south value is greater than the east value:
-          if (south > (1.5*east)) {
-            // if the south value is greater than 1.5x the east value,
-            // the azimuth is mostly south, with a small pull to the east, and an even smaller
-            // pull to the west.
-            azimuthDegrees = 180.0 - (((east)/ south) * 45.0) + (((west)/ south) * 45.0);
-            Serial.println("Southeast, south > 1.5 * east.");
-          }
-          else {
-            // else the south value is greater than the east but less than 1.5x the east value,
-            // the azimuth is still mostly south, but with a larger pull to the east and west this time.
-            azimuthDegrees = 180.0 - (((east*1.25) / south) * 45.0) + ((west / south) * 45.0);
-            Serial.println("Southeast, south > east.");
-          }
-        }
-        else {
-          // else, the east value is greater than the south value:
-          if (east > (1.5*south)) {
-            // if the east value is greater than 1.5x the south value,
-            // the azimuth is mostly east, with a small pull to the south, and an even smaller pull to
-            // the north.
-            azimuthDegrees = 90.0 + (((south)/ east) * 45.0) - (((north)/ east) * 45.0);
-            Serial.println("Southeast, east > 1.5 * south.");
-          }
-          else {
-            // else the east value is greater than the south value but less than 1.5x the south value,
-            // the azimuth is mostly east, but with a larger pull to the south and north this time.
-            azimuthDegrees = 90.0 + (((south*1.5) / east) * 45.0) - ((north / east) * 45.0);
-            Serial.println("Southeast, east > south.");
-          }
-        }
-      }
-      else {
-        // else the west value is greater than the east value:
-        if (south > west) {
-          // if the south value is greater than the west value:
-          if (south > (1.5*west)) {
-            // if the south value is greater than 1.5x the west value,
-            // the azimuth is mostly south, with a small pull to the west, and an even smaller
-            // pull to the east.
-            azimuthDegrees = 180.0 + (((west)/ south) * 45.0) - (((east)/ south) * 45.0);
-            Serial.println("Southwest, south > 1.5 * west.");
-          }
-          else {
-            // else the south value is greater than the west value but less than 1.5x the west value,
-            // the azimuth is still mostly south, but with a larger pull to the west and east this time.
-            azimuthDegrees = 180.0 + (((west*1.5) / south) * 45.0) - ((east / south) * 45.0);
-            Serial.println("Southwest, south > west.");
-          }
-        }
-        else {
-          // else the west value is greater than the south value:
-          if (west > (1.5*south)) {
-            // if the west value is greater than 1.5x the south value,
-            // the azimuth is mostly west, with a small pull to the south, and an even smaller pull 
-            // to the north.
-            azimuthDegrees = 270.0 - (((south*1.25)/ west) * 45.0) + (((north)/ west) * 45.0);
-            Serial.println("Southwest, west > 1.5 * south.");
-          }
-          else {
-            // else the west value is greater than the south value, but less than 1.5x the south value,
-            // the azimuth is still mostly west, but with a larger pull to the south and north this time.
-            azimuthDegrees = 270.0 - (((south*1.5) / west) * 45.0) + ((north / west) * 45.0);
-            Serial.println("Southwest, west > south.");
-          }
-        }
-      }
-    }
-    Serial.print("Azimuth = "); Serial.println(azimuthDegrees);
-    Serial.print("One = "); Serial.print(one); Serial.print(", "); Serial.print("Two = ");
-    Serial.print(two); Serial.print(", "); Serial.print("Three = "); Serial.print(three);
-    Serial.print(", "); Serial.print("Four = "); Serial.print(four); Serial.println(", "); Serial.print("Five = "); 
-    Serial.print(five); Serial.print(", "); Serial.print("Six = "); Serial.print(six); Serial.print(", "); Serial.print("Seven = "); 
-    Serial.print(seven); Serial.print(", "); Serial.print("Eight = "); Serial.println(eight);
-    
-    Serial.print("North = "); Serial.print(north); Serial.print(", "); Serial.print("East = ");
-    Serial.print(east); Serial.print(", "); Serial.print("South = "); Serial.print(south);
-    Serial.print(", "); Serial.print("West = "); Serial.println(west);
-    Serial.println();
-    return azimuthDegrees;
+  if ((x > 0) && (y > 0)) {
+    azimuth = 90 - (atan(y/x) * (180/PI));
   }
-  else {
-    Serial.print("North = "); Serial.print(north); Serial.print(", "); Serial.print("East = ");
-    Serial.print(east); Serial.print(", "); Serial.print("South = "); Serial.print(south);
-    Serial.print(", "); Serial.print("West = "); Serial.println(west);
-    Serial.println("Is the sensor apparatus connected?");
-    Serial.println();
-    return 500;
+  else if ((x > 0) && (y < 0)) {
+    azimuth = 90 - (atan(y/x) * (180/PI));
   }
+  else if ((x < 0) && (y < 0)) {
+    azimuth = 270 - (atan(y/x) * (180/PI));
+  }
+  else if ((x < 0) && (y > 0)) {
+    azimuth = 270 - (atan(y/x) * (180/PI));
+  }
+  
+  //Serial.print("Azimuth = "); Serial.println(azimuth);
+  return azimuth;
 }
 
 
@@ -1049,22 +893,21 @@ void convertAppSettings() {
           Serial.print("Horizontal Range = "); Serial.println(horizontalRange);
           Serial.print("New max pos. = "); Serial.println(MAX_STEPS * (horizontalRange / 100.0));
           Serial.print("New intermediate pos. = "); Serial.println(STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0));
+          delay(100);
+          break;
+        default:
           break;
       }
     }
-    // if the new max steps boundary is less than the current position of the track steppers,
-    // then move the steppers to that new boundary.
-    //if ((MAX_STEPS * (horizontalRange / 100)) < Track_Stepper_Right.currentPosition()) {
-    //  horizontalMove(MAX_STEPS * (horizontalRange / 100));
-    //}
+
     // set the new data boolean to false before exiting
     newData = false;
   }
 }
-//^^^^^^^^^^^^^^^^^^^^^FOR READING AND DECODING APP DATA^^^^^^^^^^^^^^^^^^^^//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-//▼▼▼▼▼▼▼▼▼▼FOR ALTITUDE CALC. AND VISOR MOVEMENT▼▼▼▼▼▼▼▼▼▼//
+//▲▲▲▲▲▲▲▲▲▲▲ FOR READING AND DECODING APP DATA ▲▲▲▲▲▲▲▲▲▲▲///
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//▼▼▼▼▼▼▼▼▼▼ FOR ALTITUDE CALC. AND VISOR MOVEMENT ▼▼▼▼▼▼▼▼▼▼//
 int calculateAltitude() {
   // if there was latitude data and auto mode is on:
   if ((latitude > 0) && (daysSinceJan1st > 0) && (localSolarTime > 0) && (autoMode == 1)) {
@@ -1146,6 +989,6 @@ void visorMovement(int altitude) {
     }
   }
 }
-//▲▲▲▲▲▲▲▲▲▲FOR ALTITUDE CALC. AND VISOR MOVEMENT▲▲▲▲▲▲▲▲▲▲//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+//▲▲▲▲▲▲▲▲▲▲ FOR ALTITUDE CALC. AND VISOR MOVEMENT ▲▲▲▲▲▲▲▲▲▲//
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
