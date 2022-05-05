@@ -61,6 +61,7 @@ AccelStepper Visor_Stepper(AccelStepper::DRIVER, STEP_3, DIR_3);
 #define AZIMUTH_SAMPLES 10
 #define HORIZONTAL_MOVE_DELAY 2000
 unsigned long lastHorizontalMoveTime;
+float globalAzimuth = 0;
 
 // for altitude calculations:
 #define JANUARY 31
@@ -284,7 +285,8 @@ float getAzimuth () {
   else if ((x < 0) && (y > 0)) {
     azimuth = 270 - (atan(y/x) * (180/PI));
   }
-  
+
+  globalAzimuth = azimuth;
   //Serial.print("Azimuth = "); Serial.println(azimuth);
   return azimuth;
 }
@@ -299,9 +301,11 @@ int mapAzimuth(int newAzimuth) {
     newPos = map(newAzimuth, 225, 360, 0, (STEPS_TO_ZERO_DEGREES * (horizontalRange / 100.0)));
   }
   else if ((newAzimuth > 45) && (newAzimuth <= 90)) {
-    newPos = MAX_STEPS * (horizontalRange / 100);
+    Serial.println("Azimuth OOR on right");
+    newPos = MAX_STEPS * (horizontalRange / 100.0);
   }
   else if ((newAzimuth > 180) && (newAzimuth < 225)) {
+    Serial.println("Azimuth OOR on left");
     newPos = 0;
   }
   else {
@@ -320,6 +324,7 @@ void horizontalMove(int newPosition) {
   
   if ((abs(difference) > CHANGE_THRESHOLD) && ((millis() - lastHorizontalMoveTime) >= HORIZONTAL_MOVE_DELAY)) {
 
+    Serial.print("Azimuth = "); Serial.println(globalAzimuth);
     Serial.print("New position = "); Serial.println(newPosition);
     Serial.print("Difference = "); Serial.println(difference);
     
@@ -971,15 +976,15 @@ void visorMovement(int altitude) {
       // currently under testing
       // insert code to move carriages to a position that will allow 
       // the visor to turn w/o problems
-      if (nextPos != Visor_Stepper.currentPosition()) {
-        if ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV)) {
-          horizontalMove(RIGHT_BOUNDARY_REV);
-        }
-        else if ((Track_Stepper_Right.currentPosition() > LEFT_BOUNDARY_REV) 
-                && (Track_Stepper_Right.currentPosition() < LEFT_BOUNDARY_FOR)) {
-          horizontalMove(LEFT_BOUNDARY_REV);
-        }
-      }
+//      if (nextPos != Visor_Stepper.currentPosition()) {
+//        if ((Track_Stepper_Right.currentPosition() > RIGHT_BOUNDARY_REV)) {
+//          horizontalMove(RIGHT_BOUNDARY_REV);
+//        }
+//        else if ((Track_Stepper_Right.currentPosition() > LEFT_BOUNDARY_REV) 
+//                && (Track_Stepper_Right.currentPosition() < LEFT_BOUNDARY_FOR)) {
+//          horizontalMove(LEFT_BOUNDARY_REV);
+//        }
+//      }
 /////////////////////////////////////////////////////////////////
       
       // move the visor to the next position:
