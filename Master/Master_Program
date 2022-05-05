@@ -145,7 +145,8 @@ void loop() {
   convertAppSettings();
   float azimuth = getAzimuth();
   int steps = mapAzimuth(azimuth);
-  visorMovement(calculateAltitude());
+  int altitude = calculateAltitude();
+  visorMovement(altitude);
   horizontalMove(steps);
 }
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^SETUP AND LOOP^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^//
